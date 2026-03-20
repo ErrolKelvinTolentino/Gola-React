@@ -6,7 +6,7 @@ function HomePage({ goalsCount, allTaskCount, activeTasksCount, completionRate, 
       <div className="hero-wrap card premium-surface">
         <img src={lumiWave} alt="Lumi mascot waving" className="hero-lumi" />
         <div>
-          <h1>Welcome to Gola Web</h1>
+          <h1>Welcome to Gola!</h1>
           <p className="lead">A premium focus cockpit crafted for elegant daily execution.</p>
           <div className="hero-pills">
             <span>{goalsCount} goals</span>

@@ -1,7 +1,7 @@
 function SettingsPage({ theme, setTheme, settings, toggleSetting }) {
   return (
     <section className="page page-enter">
-      <h1>Settings</h1>
+      <h1 className="page-title">Settings</h1>
       <p className="lead">Tune your visual mode and productivity preferences.</p>
 
       <div className="card settings-list premium-surface">

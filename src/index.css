@@ -1,12 +1,11 @@
 body {
   margin: 0;
-  font-family: "Sora", "Segoe UI", sans-serif;
+  font-family: "Outfit", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #faf9ff;
+  background: #f8f9fb;
 }
 
 code {
-  font-family:
-    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }

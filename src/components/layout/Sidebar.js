@@ -5,10 +5,7 @@ function Sidebar({ navItems, activePage, onChangePage }) {
     <aside className="sidebar">
       <div className="brand">
         <img src={golaLogo} alt="Gola logo" className="brand-logo" />
-        <div>
-          <strong>Gola</strong>
-          <p>Premium Focus System</p>
-        </div>
+        <strong>GOLA</strong>
       </div>
 
       <nav>

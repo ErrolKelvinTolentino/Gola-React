@@ -21,7 +21,7 @@ function App() {
   const [activePage, setActivePage] = useState('Home');
   const [theme, setTheme] = useState('light');
   const [goals, setGoals] = useState(INITIAL_GOALS);
-  const [selectedGoalId, setSelectedGoalId] = useState(INITIAL_GOALS[0].id);
+  const [selectedGoalId, setSelectedGoalId] = useState(null);
   const [goalName, setGoalName] = useState('');
   const [goalVision, setGoalVision] = useState('');
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
@@ -212,6 +212,7 @@ function App() {
           goalVision={goalVision}
           setGoalVision={setGoalVision}
           addGoal={addGoal}
+          theme={theme}
         />
       );
     }
@@ -262,7 +263,7 @@ function App() {
       <Sidebar navItems={NAV_ITEMS} activePage={activePage} onChangePage={setActivePage} />
 
       <main className="main-panel">
-        <TopBar date={today} theme={theme} />
+        <TopBar date={today} activePage={activePage} />
         {renderActivePage()}
       </main>
     </div>

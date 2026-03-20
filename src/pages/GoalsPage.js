@@ -1,8 +1,26 @@
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { getGoalProgress } from '../utils/dateUtils';
 
-function GoalTaskForm({ goalId, form, updateTaskForm, addTaskToGoal, toggleSpecificDay, weekDays }) {
+function ModalOverlay({ onClose, children, theme }) {
+  return createPortal(
+    <div className={`modal-backdrop theme-${theme}`} onClick={onClose}>
+      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function GoalTaskForm({ goalId, form, updateTaskForm, addTaskToGoal, toggleSpecificDay, weekDays, onDone }) {
+  const handleSubmit = (event) => {
+    addTaskToGoal(goalId, event);
+    onDone();
+  };
+
   return (
-    <form className="task-form" onSubmit={(event) => addTaskToGoal(goalId, event)}>
+    <form className="task-form" onSubmit={handleSubmit}>
       <div className="section-head">
         <h3>Add Task</h3>
         <p>Compose one-time or recurring actions for this goal.</p>
@@ -80,7 +98,10 @@ function GoalTaskForm({ goalId, form, updateTaskForm, addTaskToGoal, toggleSpeci
         </div>
       )}
 
-      <button className="primary-btn" type="submit">Add Task</button>
+      <div className="modal-actions">
+        <button type="button" className="ghost-btn" onClick={onDone}>Cancel</button>
+        <button className="primary-btn" type="submit">Add Task</button>
+      </div>
     </form>
   );
 }
@@ -109,14 +130,27 @@ function GoalsPage({
   setGoalName,
   goalVision,
   setGoalVision,
-  addGoal
+  addGoal,
+  theme
 }) {
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+
+  const handleOpenGoal = (goalId) => {
+    setSelectedGoalId(goalId);
+    setIsTaskModalOpen(false);
+  };
+
+  const handleBackToGoals = () => {
+    setSelectedGoalId(null);
+    setIsTaskModalOpen(false);
+  };
+
   return (
     <section className="page page-enter goals-page">
       <div className="goals-head">
         <div>
           <h1>Goals Workspace</h1>
-          <p className="lead">Select a goal to plan tasks, cadence, and execution details.</p>
+          <p className="lead">Start with your goals list. Open one to manage tasks.</p>
         </div>
         <div className="goals-summary card">
           <strong>{goals.length}</strong>
@@ -126,25 +160,22 @@ function GoalsPage({
         </div>
       </div>
 
-      <div className="goal-layout premium-layout">
-        <aside className="card goal-list-pane premium-surface">
-          <div className="section-head compact">
-            <h3>Your Goals</h3>
-            <p>Pick one to open details.</p>
-          </div>
+      {!selectedGoal && (
+        <div className="goals-grid-list">
           {goals.map((goal) => {
             const progress = getGoalProgress(goal);
             return (
               <button
                 key={goal.id}
                 type="button"
-                className={selectedGoalId === goal.id ? 'goal-nav active' : 'goal-nav'}
-                onClick={() => setSelectedGoalId(goal.id)}
+                className="goal-nav"
+                onClick={() => handleOpenGoal(goal.id)}
               >
                 <div className="goal-nav-top">
                   <strong>{goal.name}</strong>
                   <span>{progress}%</span>
                 </div>
+                <small>{goal.vision}</small>
                 <small>{goal.tasks.length} tasks</small>
                 <div className="goal-progress">
                   <div style={{ width: `${progress}%` }} />
@@ -152,98 +183,109 @@ function GoalsPage({
               </button>
             );
           })}
-        </aside>
-
-        <div className="card goal-detail-pane premium-surface">
-          {!selectedGoal && <p>Select a goal to view its tasks.</p>}
-          {selectedGoal && (
-            <>
-              <div className="goal-head">
-                <h2>{selectedGoal.name}</h2>
-                <p>{selectedGoal.vision}</p>
-              </div>
-
-              <GoalTaskForm
-                goalId={selectedGoal.id}
-                form={getTaskForm(selectedGoal.id)}
-                updateTaskForm={updateTaskForm}
-                addTaskToGoal={addTaskToGoal}
-                toggleSpecificDay={toggleSpecificDay}
-                weekDays={weekDays}
-              />
-
-              <div className="section-head compact">
-                <h3>Tasks in Goal</h3>
-                <p>Mark progress for today directly from this view.</p>
-              </div>
-
-              <ul className="task-list interactive">
-                {selectedGoal.tasks.length === 0 && <li className="empty-row">No tasks yet for this goal.</li>}
-                {selectedGoal.tasks.map((task) => {
-                  const activeToday = isTaskActiveOnDate(task, today);
-                  const doneToday = isTaskDoneForDate(task, today);
-                  return (
-                    <li key={task.id} className={doneToday ? 'done' : ''}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={doneToday}
-                          onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
-                        />
-                        <span>{task.title}</span>
-                      </label>
-                      <div className="task-meta">
-                        <small>{getRecurrenceText(task)}</small>
-                        <span className={activeToday ? 'status-pill live' : 'status-pill'}>
-                          {activeToday ? 'Active today' : 'Not today'}
-                        </span>
-                        <span className="deadline-pill">{prettyDate(task.deadline)}</span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
         </div>
-      </div>
+      )}
 
-      <button type="button" className="fab-goal" onClick={openGoalModal} aria-label="Add goal">
-        +
-      </button>
+      {selectedGoal && (
+        <div className="card goal-detail-pane premium-surface goals-detail-shell">
+          <div className="goals-detail-header">
+            <button type="button" className="ghost-btn back-goals-btn" onClick={handleBackToGoals}>
+              Back to goals
+            </button>
+            <button type="button" className="primary-btn add-task-btn" onClick={() => setIsTaskModalOpen(true)}>
+              Add Task
+            </button>
+          </div>
+
+          <div className="goal-head">
+            <h2>{selectedGoal.name}</h2>
+            <p>{selectedGoal.vision}</p>
+          </div>
+
+          <div className="section-head compact">
+            <h3>Tasks in Goal</h3>
+            <p>Mark progress for today directly from this view.</p>
+          </div>
+
+          <ul className="task-list interactive">
+            {selectedGoal.tasks.length === 0 && <li className="empty-row">No tasks yet for this goal.</li>}
+            {selectedGoal.tasks.map((task) => {
+              const activeToday = isTaskActiveOnDate(task, today);
+              const doneToday = isTaskDoneForDate(task, today);
+              return (
+                <li key={task.id} className={doneToday ? 'done' : ''}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={doneToday}
+                      onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
+                    />
+                    <span>{task.title}</span>
+                  </label>
+                  <div className="task-meta">
+                    <small>{getRecurrenceText(task)}</small>
+                    <span className={activeToday ? 'status-pill live' : 'status-pill'}>
+                      {activeToday ? 'Active today' : 'Not today'}
+                    </span>
+                    <span className="deadline-pill">{prettyDate(task.deadline)}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {!selectedGoal && (
+        <button type="button" className="fab-goal" onClick={openGoalModal} aria-label="Add goal">
+          +
+        </button>
+      )}
 
       {isGoalModalOpen && (
-        <div className="modal-backdrop" onClick={closeGoalModal}>
-          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
-            <h3>Create New Goal</h3>
-            <p>Define your target, then start attaching actionable tasks.</p>
-            <form className="modal-form" onSubmit={addGoal}>
-              <label>
-                Goal name
-                <input
-                  type="text"
-                  placeholder="Enter goal"
-                  value={goalName}
-                  onChange={(event) => setGoalName(event.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                Vision
-                <textarea
-                  rows="3"
-                  placeholder="What does success look like?"
-                  value={goalVision}
-                  onChange={(event) => setGoalVision(event.target.value)}
-                />
-              </label>
-              <div className="modal-actions">
-                <button type="button" className="ghost-btn" onClick={closeGoalModal}>Cancel</button>
-                <button type="submit" className="primary-btn">Create Goal</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ModalOverlay onClose={closeGoalModal} theme={theme}>
+          <h3>Create New Goal</h3>
+          <p>Define your target, then start attaching actionable tasks.</p>
+          <form className="modal-form" onSubmit={addGoal}>
+            <label>
+              Goal name
+              <input
+                type="text"
+                placeholder="Enter goal"
+                value={goalName}
+                onChange={(event) => setGoalName(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Vision
+              <textarea
+                rows="3"
+                placeholder="What does success look like?"
+                value={goalVision}
+                onChange={(event) => setGoalVision(event.target.value)}
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="ghost-btn" onClick={closeGoalModal}>Cancel</button>
+              <button type="submit" className="primary-btn">Create Goal</button>
+            </div>
+          </form>
+        </ModalOverlay>
+      )}
+
+      {isTaskModalOpen && selectedGoal && (
+        <ModalOverlay onClose={() => setIsTaskModalOpen(false)} theme={theme}>
+          <GoalTaskForm
+            goalId={selectedGoal.id}
+            form={getTaskForm(selectedGoal.id)}
+            updateTaskForm={updateTaskForm}
+            addTaskToGoal={addTaskToGoal}
+            toggleSpecificDay={toggleSpecificDay}
+            weekDays={weekDays}
+            onDone={() => setIsTaskModalOpen(false)}
+          />
+        </ModalOverlay>
       )}
     </section>
   );
