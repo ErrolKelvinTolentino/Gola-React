@@ -6,6 +6,8 @@ import TasksPage from './pages/TasksPage';
 import GoalsPage from './pages/GoalsPage';
 import CalendarPage from './pages/CalendarPage';
 import SettingsPage from './pages/SettingsPage';
+import FocusPage from './pages/FocusPage';
+import GlobalTimerWidget from './components/GlobalTimerWidget';
 import { DEFAULT_SETTINGS, DEFAULT_TASK_FORM, INITIAL_GOALS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
 import {
   buildCalendarCells,
@@ -16,6 +18,7 @@ import {
   prettyDate
 } from './utils/dateUtils';
 import './App.css';
+import './Animations.css';
 
 function App() {
   const [activePage, setActivePage] = useState('Home');
@@ -86,15 +89,21 @@ function App() {
     setGoalVision('');
   };
 
-  const addGoal = (event) => {
-    event.preventDefault();
+  const addGoal = (eventOrTasks) => {
+    let generatedTasks = [];
+    if (eventOrTasks && typeof eventOrTasks.preventDefault === 'function') {
+      eventOrTasks.preventDefault();
+    } else if (Array.isArray(eventOrTasks)) {
+      generatedTasks = eventOrTasks;
+    }
+    
     if (!goalName.trim()) return;
 
     const newGoal = {
       id: Date.now(),
       name: goalName.trim(),
       vision: goalVision.trim() || 'A clear target worth showing up for.',
-      tasks: []
+      tasks: generatedTasks
     };
 
     setGoals((currentGoals) => [newGoal, ...currentGoals]);
@@ -117,6 +126,8 @@ function App() {
       weeklyDay: form.weeklyDay,
       specificDays: form.specificDays,
       deadline: form.deadline,
+      timeEstimate: form.timeEstimate,
+      energy: form.energy,
       completed: false,
       completedDates: []
     };
@@ -220,12 +231,20 @@ function App() {
     if (activePage === 'Calendar') {
       return (
         <CalendarPage
-          monthName={monthName}
-          year={today.getFullYear()}
+          goals={goals}
           weekDays={WEEK_DAYS}
-          calendarCells={calendarCells}
           todayKey={todayKey}
           compactCalendar={settings.compactCalendar}
+        />
+      );
+    }
+
+    if (activePage === 'Focus') {
+      return (
+        <FocusPage 
+          activeTasksToday={activeTasksToday} 
+          toggleTaskDoneForToday={toggleTaskDoneForToday}
+          setActivePage={setActivePage}
         />
       );
     }
@@ -261,10 +280,15 @@ function App() {
       <div className="aurora aurora-c" />
 
       <Sidebar navItems={NAV_ITEMS} activePage={activePage} onChangePage={setActivePage} />
+      <GlobalTimerWidget activePage={activePage} setActivePage={setActivePage} />
 
-      <main className="main-panel">
+      <main className={`main-panel${activePage === 'Focus' ? ' focus-mode' : ''}`}>
         <TopBar date={today} activePage={activePage} />
-        {renderActivePage()}
+        {activePage === 'Focus' ? (
+          <div className="focus-wrap">
+            {renderActivePage()}
+          </div>
+        ) : renderActivePage()}
       </main>
     </div>
   );

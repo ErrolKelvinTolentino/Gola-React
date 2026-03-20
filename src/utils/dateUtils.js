@@ -14,6 +14,8 @@ export function getDateKey(dateInput) {
 
 export function prettyDate(dateKey) {
   if (!dateKey) return 'No deadline';
+  const todayKey = getDateKey(new Date());
+  if (dateKey === todayKey) return 'Today';
   const date = new Date(`${dateKey}T00:00:00`);
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }

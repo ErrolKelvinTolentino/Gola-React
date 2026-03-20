@@ -4,10 +4,14 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+import { TimerProvider } from './context/TimerContext';
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App />
+    <TimerProvider>
+      <App />
+    </TimerProvider>
   </React.StrictMode>
 );
 

@@ -12,85 +12,116 @@ body {
 }
 
 .app-shell {
-  --bg: #f8f9fb;
-  --bg-2: #eff1f5;
-  --text: #1a1c29;
-  --muted: #8a8e9f;
-  --panel: rgba(255, 255, 255, 0.65);
-  --panel-strong: rgba(255, 255, 255, 0.9);
-  --line: rgba(0, 0, 50, 0.08);
-  --accent: #6757e8;
-  --accent-2: #978cf2;
-  --title-grad-1: #7c3aed;
-  --title-grad-2: #9387f4;
-  --title-grad-3: #e892c7;
-  --good: #10b981;
+  --bg: #f8fafc;
+  --bg-2: #e2e8f0;
+  --text: #0f172a;
+  --muted: #64748b;
+  --panel: #ffffff;
+  --panel-strong: #ffffff;
+  --line: rgba(15, 23, 42, 0.1);
+
+  /* Core Tri-Color Harmony */
+  --blue: #3b82f6;
+  --pink: #ec4899;
+  --violet: #8b5cf6;
+
+  --accent: var(--violet);
+  --accent-2: var(--pink);
+  --title-grad-1: var(--blue);
+  --title-grad-2: var(--violet);
+  --title-grad-3: var(--pink);
+  --good: var(--blue);
+
   --shadow:
-    0 20px 45px -10px rgba(0, 0, 0, 0.06), 0 10px 20px -5px rgba(0, 0, 0, 0.04);
-  --btn-shadow: 0 8px 16px -4px rgba(93, 95, 239, 0.3);
-  --glass-border: 1px solid rgba(255, 255, 255, 0.5);
+    0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+  --btn-shadow: 0 12px 24px -8px rgba(139, 92, 246, 0.4);
+  --glass-border: 1px solid rgba(15, 23, 42, 0.08);
+  --input-bg: #ffffff;
+  --input-border: rgba(15, 23, 42, 0.15);
 
   min-height: 100vh;
+  height: 100vh;
   position: relative;
   overflow: hidden;
   display: flex;
   color: var(--text);
-  font-family: "Outfit", "Segoe UI", sans-serif;
+  font-family: "Outfit", "Inter", "Segoe UI", sans-serif;
   background:
     radial-gradient(
       circle at 15% 15%,
       rgba(139, 92, 246, 0.15),
       transparent 45%
     ),
+    /* Violet */
     radial-gradient(
-      circle at 85% 10%,
-      rgba(151, 140, 242, 0.14),
-      transparent 40%
-    ),
+        circle at 85% 10%,
+        rgba(59, 130, 246, 0.15),
+        transparent 40%
+      ),
+    /* Blue */
     radial-gradient(
-      circle at 80% 90%,
-      rgba(236, 72, 153, 0.1),
-      transparent 45%
-    ),
-    linear-gradient(145deg, var(--bg) 0%, var(--bg-2) 100%);
+        circle at 50% 90%,
+        rgba(236, 72, 153, 0.15),
+        transparent 50%
+      ),
+    /* Pink */ linear-gradient(145deg, var(--bg) 0%, var(--bg-2) 100%);
 }
 
 .app-shell.theme-dark {
-  --bg: #0b0c10;
-  --bg-2: #141620;
-  --text: #f1f3f8;
-  --muted: #84899c;
-  --panel: rgba(24, 26, 38, 0.6);
-  --panel-strong: rgba(28, 30, 44, 0.85);
-  --line: rgba(255, 255, 255, 0.08);
-  --accent: #8a6ff0;
-  --accent-2: #b19bf8;
-  --title-grad-1: #a78bfa;
-  --title-grad-2: #baa9ff;
-  --title-grad-3: #e6b0d3;
-  --good: #10b981;
+  --bg: #09090b;
+  --bg-2: #18181b;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --panel: rgba(24, 24, 27, 0.65);
+  --panel-strong: rgba(24, 24, 27, 0.95);
+  --line: rgba(255, 255, 255, 0.1);
+
+  /* Core Tri-Color Harmony Dark variants */
+  --blue: #60a5fa;
+  --pink: #f472b6;
+  --violet: #a78bfa;
+
+  --accent: var(--violet);
+  --accent-2: var(--pink);
+  --title-grad-1: var(--blue);
+  --title-grad-2: var(--violet);
+  --title-grad-3: var(--pink);
+  --good: var(--blue);
+
   --shadow:
-    0 24px 50px -12px rgba(0, 0, 0, 0.5), 0 12px 24px -8px rgba(0, 0, 0, 0.3);
-  --btn-shadow: 0 8px 16px -4px rgba(124, 58, 237, 0.35);
+    0 24px 50px -12px rgba(0, 0, 0, 0.6), 0 12px 24px -8px rgba(0, 0, 0, 0.4);
+  --btn-shadow: 0 8px 16px -4px rgba(167, 139, 250, 0.35); /* Violet glow */
   --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(0, 0, 0, 0.2);
+  --input-border: rgba(255, 255, 255, 0.15);
+
+  color-scheme: dark;
 
   background:
     radial-gradient(
       circle at 15% 15%,
-      rgba(124, 58, 237, 0.2),
+      rgba(167, 139, 250, 0.18),
       transparent 45%
     ),
+    /* Violet */
     radial-gradient(
-      circle at 85% 10%,
-      rgba(177, 155, 248, 0.2),
-      transparent 40%
-    ),
+        circle at 85% 10%,
+        rgba(96, 165, 250, 0.18),
+        transparent 40%
+      ),
+    /* Blue */
     radial-gradient(
-      circle at 80% 90%,
-      rgba(236, 72, 153, 0.15),
-      transparent 45%
-    ),
-    linear-gradient(145deg, var(--bg) 0%, var(--bg-2) 100%);
+        circle at 80% 90%,
+        rgba(244, 114, 182, 0.18),
+        transparent 50%
+      ),
+    /* Pink */
+    radial-gradient(
+        circle at 30% 60%,
+        rgba(244, 114, 182, 0.12),
+        transparent 45%
+      ),
+    /* Pink sub-node */ linear-gradient(145deg, var(--bg) 0%, var(--bg-2) 100%);
 }
 
 .aurora {
@@ -112,21 +143,64 @@ body {
 }
 
 .aurora-b {
-  top: -20vw;
+  bottom: -25vw;
   right: -20vw;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.7), transparent 60%);
+  animation-delay: -6s;
+}
+.app-shell .aurora-a {
   background: radial-gradient(
     circle,
-    rgba(151, 140, 242, 0.75),
+    rgba(139, 92, 246, 0.6),
     transparent 60%
-  );
-  animation-delay: -4s;
+  ); /* Violet */
+  transform: translate(0, 0);
+  top: -10%;
+  left: -10%;
 }
 
-.aurora-c {
-  bottom: -30vw;
-  left: 20vw;
-  background: radial-gradient(circle, rgba(236, 72, 153, 0.6), transparent 60%);
-  animation-delay: -8s;
+.app-shell .aurora-b {
+  background: radial-gradient(
+    circle,
+    rgba(59, 130, 246, 0.5),
+    transparent 60%
+  ); /* Blue */
+  transform: translate(-10%, 20%);
+  animation-delay: -5s;
+  bottom: -20%;
+  right: -20%;
+}
+
+.app-shell .aurora-c {
+  background: radial-gradient(
+    circle,
+    rgba(236, 72, 153, 0.6),
+    transparent 60%
+  ); /* Pink */
+  transform: translate(20%, -30%);
+  animation-delay: -10s;
+  top: 40%;
+  left: 60%;
+}
+
+.app-shell.theme-dark .aurora-a {
+  background: radial-gradient(
+    circle,
+    rgba(167, 139, 250, 0.35),
+    transparent 60%
+  );
+}
+
+.app-shell.theme-dark .aurora-b {
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.3), transparent 60%);
+}
+
+.app-shell.theme-dark .aurora-c {
+  background: radial-gradient(
+    circle,
+    rgba(244, 114, 182, 0.35),
+    transparent 65%
+  );
 }
 
 .sidebar,
@@ -137,6 +211,12 @@ body {
 
 .sidebar {
   width: 264px;
+  height: 100vh;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  overflow-y: auto;
   border-right: 1px solid var(--line);
   background: var(--panel);
   backdrop-filter: blur(24px);
@@ -145,6 +225,12 @@ body {
   flex-direction: column;
   gap: 18px;
   padding: 20px 16px;
+  z-index: 100;
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar.collapsed {
+  width: 80px;
 }
 
 .brand {
@@ -219,12 +305,29 @@ body {
 
 .main-panel {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  min-height: 0;
+  height: 100vh;
+  max-height: 100vh;
   padding: 28px 32px;
   overflow-y: auto;
+  overflow-x: hidden;
   scroll-behavior: smooth;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Focus page takes full available height with no extra padding */
+.main-panel.focus-mode {
+  padding: 16px;
+  overflow: hidden;
+}
+
+.focus-wrap {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .top-bar {
@@ -656,15 +759,64 @@ input,
 select,
 textarea {
   width: 100%;
-  border: var(--glass-border);
+  border: 1px solid var(--input-border);
   border-radius: 12px;
-  background: var(--panel);
+  background: var(--input-bg);
   color: var(--text);
   padding: 12px 14px;
   font: inherit;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+}
+
+/* Custom styling for standard select dropdown so there is no awkward native arrow */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg fill="none" stroke="%234f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px;
+  padding-right: 40px;
+}
+.app-shell.theme-dark select {
+  background-image: url('data:image/svg+xml;utf8,<svg fill="none" stroke="%23818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"/></svg>');
+}
+
+select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+.app-shell.theme-dark select option {
+  background-color: #1c1e2c;
+  color: #f1f3f8;
+}
+
+/* Customizing Date Picker Icon in Webkit */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  background-image: url('data:image/svg+xml;utf8,<svg fill="none" stroke="%234f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+.app-shell.theme-dark input[type="date"]::-webkit-calendar-picker-indicator {
+  background-image: url('data:image/svg+xml;utf8,<svg fill="none" stroke="%23818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>');
 }
 
 input:focus,
@@ -693,11 +845,6 @@ textarea:focus {
 .task-form {
   display: grid;
   gap: 16px;
-  margin-bottom: 24px;
-  background: var(--panel);
-  padding: 20px;
-  border-radius: 18px;
-  border: var(--glass-border);
 }
 
 .task-form label {
@@ -875,20 +1022,34 @@ textarea:focus {
   font-weight: 500;
 }
 
-.deadline-pill,
-.status-pill {
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: var(--glass-border);
+.meta-chip {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: var(--panel);
+  color: var(--muted);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
-.status-pill.live {
+.app-shell.theme-dark .meta-chip {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.meta-chip.highlight {
+  background: rgba(124, 58, 237, 0.08); /* Accent-driven faint background */
+  color: var(--accent);
+  border-color: rgba(124, 58, 237, 0.15);
+}
+
+.meta-chip.good {
   background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.3);
   color: var(--good);
+  border-color: rgba(16, 185, 129, 0.2);
 }
 
 .empty-row {
@@ -954,8 +1115,10 @@ textarea:focus {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.toggle.on {
+.toggle.on,
+.app-shell.theme-dark .toggle.on {
   background: var(--accent);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .toggle.on span {
@@ -1157,16 +1320,26 @@ textarea:focus {
 @media (max-width: 1000px) {
   .app-shell {
     flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
   .sidebar {
+    position: sticky;
+    top: 0;
     width: 100%;
+    height: auto;
+    max-height: 50vh;
+    overflow-y: auto;
     border-right: none;
     border-bottom: 1px solid var(--line);
-    padding: 20px;
+    padding: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
   .sidebar nav {
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 8px;
   }
   .goals-head {
     flex-direction: column;
@@ -1204,4 +1377,17 @@ textarea:focus {
   .brand strong {
     font-size: 1.1rem;
   }
+}
+
+/* High-End Glassmorphic Panels */
+.premium-surface {
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.08);
+}
+
+.app-shell.theme-dark .premium-surface {
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.4);
 }

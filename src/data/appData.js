@@ -1,6 +1,6 @@
 import { addDays, getDateKey } from '../utils/dateUtils';
 
-export const NAV_ITEMS = ['Home', 'Tasks', 'Goals', 'Calendar', 'Settings'];
+export const NAV_ITEMS = ['Home', 'Tasks', 'Focus', 'Goals', 'Calendar', 'Settings'];
 export const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const INITIAL_GOALS = [
@@ -70,7 +70,9 @@ export const DEFAULT_TASK_FORM = {
   oneTimeDate: getDateKey(new Date()),
   weeklyDay: 1,
   specificDays: [1, 3, 5],
-  deadline: ''
+  deadline: '',
+  timeEstimate: '30m',
+  energy: 'Medium'
 };
 
 export const DEFAULT_SETTINGS = {

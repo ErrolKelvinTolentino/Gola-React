@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Target, RotateCw, Calendar as CalendarIcon, CheckCircle2, Cpu } from 'lucide-react';
 import { getGoalProgress } from '../utils/dateUtils';
+import AiGoalWizard from '../components/AiGoalWizard';
 
 function ModalOverlay({ onClose, children, theme }) {
   return createPortal(
@@ -49,12 +51,39 @@ function GoalTaskForm({ goalId, form, updateTaskForm, addTaskToGoal, toggleSpeci
         </label>
 
         <label>
-          Deadline
+          Deadline (Optional)
           <input
             type="date"
             value={form.deadline}
             onChange={(event) => updateTaskForm(goalId, { deadline: event.target.value })}
           />
+        </label>
+      </div>
+
+      <div className="task-form-row">
+        <label>
+          Time Estimate
+          <select
+            value={form.timeEstimate}
+            onChange={(event) => updateTaskForm(goalId, { timeEstimate: event.target.value })}
+          >
+            <option value="15m">15 min (Quick Win)</option>
+            <option value="30m">30 min (Standard)</option>
+            <option value="1h">1 hour (Focused)</option>
+            <option value="2h+">2+ hours (Deep Work)</option>
+          </select>
+        </label>
+
+        <label>
+          Energy Context
+          <select
+            value={form.energy}
+            onChange={(event) => updateTaskForm(goalId, { energy: event.target.value })}
+          >
+            <option value="Low">Low (Maintenance/Admin)</option>
+            <option value="Medium">Medium (Standard)</option>
+            <option value="High">High (Creative/Complex)</option>
+          </select>
         </label>
       </div>
 
@@ -134,6 +163,13 @@ function GoalsPage({
   theme
 }) {
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [creationMode, setCreationMode] = useState(null);
+
+  useEffect(() => {
+    if (!isGoalModalOpen) {
+      setCreationMode(null);
+    }
+  }, [isGoalModalOpen]);
 
   const handleOpenGoal = (goalId) => {
     setSelectedGoalId(goalId);
@@ -197,9 +233,19 @@ function GoalsPage({
             </button>
           </div>
 
-          <div className="goal-head">
-            <h2>{selectedGoal.name}</h2>
-            <p>{selectedGoal.vision}</p>
+          <div className="goal-head" style={{ marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '2rem', marginBottom: '8px', letterSpacing: '-0.02em' }}>{selectedGoal.name}</h2>
+            <p style={{ fontSize: '1.1rem', color: 'var(--muted)', marginBottom: '24px' }}>{selectedGoal.vision}</p>
+            
+            <div style={{ padding: '20px', background: 'var(--bg-2)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '0.9rem', fontWeight: 600 }}>
+                <span style={{ color: 'var(--text)' }}>Execution Progress</span>
+                <span style={{ color: 'var(--accent)' }}>{getGoalProgress(selectedGoal)}%</span>
+              </div>
+              <div style={{ height: '8px', background: 'var(--panel)', borderRadius: '99px', overflow: 'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
+                <div style={{ width: `${getGoalProgress(selectedGoal)}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent-2))', height: '100%', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+              </div>
+            </div>
           </div>
 
           <div className="section-head compact">
@@ -207,32 +253,63 @@ function GoalsPage({
             <p>Mark progress for today directly from this view.</p>
           </div>
 
-          <ul className="task-list interactive">
-            {selectedGoal.tasks.length === 0 && <li className="empty-row">No tasks yet for this goal.</li>}
-            {selectedGoal.tasks.map((task) => {
-              const activeToday = isTaskActiveOnDate(task, today);
-              const doneToday = isTaskDoneForDate(task, today);
-              return (
-                <li key={task.id} className={doneToday ? 'done' : ''}>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={doneToday}
-                      onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
-                    />
-                    <span>{task.title}</span>
-                  </label>
-                  <div className="task-meta">
-                    <small>{getRecurrenceText(task)}</small>
-                    <span className={activeToday ? 'status-pill live' : 'status-pill'}>
-                      {activeToday ? 'Active today' : 'Not today'}
-                    </span>
-                    <span className="deadline-pill">{prettyDate(task.deadline)}</span>
-                  </div>
+          <div style={{ padding: '0', overflow: 'hidden', borderRadius: '16px', border: '1px solid var(--line)' }}>
+            <ul className="task-list interactive" style={{ gap: '0' }}>
+              {selectedGoal.tasks.length === 0 && (
+                <li className="empty-row" style={{ padding: '40px 20px', flexDirection: 'column', gap: '16px', background: 'transparent' }}>
+                  <CheckCircle2 color="var(--muted)" size={48} />
+                  <div style={{ fontSize: '1.1rem', fontWeight: '500', color: 'var(--text)' }}>No tasks here yet.</div>
+                  <p>Add some actionable steps to make progress on this goal.</p>
                 </li>
-              );
-            })}
-          </ul>
+              )}
+              {selectedGoal.tasks.map((task, idx) => {
+                const activeToday = isTaskActiveOnDate(task, today);
+                const doneToday = isTaskDoneForDate(task, today);
+                return (
+                  <li 
+                    key={task.id} 
+                    className={doneToday ? 'done' : ''}
+                    style={{
+                      border: 'none',
+                      borderBottom: idx === selectedGoal.tasks.length - 1 ? 'none' : '1px solid var(--line)',
+                      borderRadius: '0',
+                      padding: '16px 24px',
+                      background: doneToday ? 'var(--bg-2)' : 'var(--panel)',
+                    }}
+                  >
+                    <label style={{ fontSize: '1.05rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={doneToday}
+                        onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
+                        style={{ width: '22px', height: '22px', marginRight: '6px' }}
+                      />
+                      <span>{task.title}</span>
+                    </label>
+                    <div className="task-meta">
+                      <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <RotateCw size={14} /> {getRecurrenceText(task)}
+                      </small>
+                      {task.timeEstimate && (
+                        <span className="meta-chip">⏱ {task.timeEstimate}</span>
+                      )}
+                      {task.energy && (
+                        <span className="meta-chip">⚡ {task.energy}</span>
+                      )}
+                      <span className={activeToday ? 'meta-chip good' : 'meta-chip'}>
+                        {activeToday ? 'Active today' : 'Not today'}
+                      </span>
+                      {task.deadline && (
+                        <span className="meta-chip highlight">
+                          <CalendarIcon size={12} /> {prettyDate(task.deadline)}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
       )}
 
@@ -244,33 +321,84 @@ function GoalsPage({
 
       {isGoalModalOpen && (
         <ModalOverlay onClose={closeGoalModal} theme={theme}>
-          <h3>Create New Goal</h3>
-          <p>Define your target, then start attaching actionable tasks.</p>
-          <form className="modal-form" onSubmit={addGoal}>
-            <label>
-              Goal name
-              <input
-                type="text"
-                placeholder="Enter goal"
-                value={goalName}
-                onChange={(event) => setGoalName(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Vision
-              <textarea
-                rows="3"
-                placeholder="What does success look like?"
-                value={goalVision}
-                onChange={(event) => setGoalVision(event.target.value)}
-              />
-            </label>
-            <div className="modal-actions">
-              <button type="button" className="ghost-btn" onClick={closeGoalModal}>Cancel</button>
-              <button type="submit" className="primary-btn">Create Goal</button>
+          {!creationMode && (
+            <div style={{ display: 'grid', gap: '20px', padding: '10px 0' }}>
+              <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: '1.4rem' }}>Initialize New Target</h3>
+                <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.95rem' }}>Are you defining this manually or would you like AI to construct your execution roadmap?</p>
+              </div>
+              <button 
+                className="ghost-btn" 
+                style={{ padding: '24px', border: '2px solid var(--line)', display: 'grid', gap: '6px', textAlign: 'left', borderRadius: '16px' }} 
+                onClick={() => setCreationMode('manual')}
+              >
+                <strong style={{ fontSize: '1.1rem', color: 'var(--text)' }}>Create Manually</strong>
+                <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Input your goal, description, strict deadlines, and manually map out your actions.</span>
+              </button>
+              <button 
+                className="primary-btn" 
+                style={{ padding: '24px', display: 'grid', gap: '6px', textAlign: 'left', borderRadius: '16px', gridTemplateColumns: 'minmax(0,1fr) auto', boxAlign: 'center', alignItems: 'center' }} 
+                onClick={() => setCreationMode('ai')}
+              >
+                <div>
+                  <strong style={{ fontSize: '1.1rem', display: 'block' }}>Plan with AI Workspace</strong>
+                  <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', display: 'block' }}>Complete a quick parameterization and let the AI generate a tactical checklist.</span>
+                </div>
+                <Cpu size={32} style={{ opacity: 0.8 }} />
+              </button>
             </div>
-          </form>
+          )}
+
+          {creationMode === 'manual' && (
+            <>
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ margin: '0 0 4px', fontSize: '1.3rem' }}>Create Goal Manually</h3>
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.95rem' }}>Explicitly define your goal metrics and strict timelines.</p>
+              </div>
+              <form className="modal-form" onSubmit={addGoal} style={{ display: 'grid', gap: '16px' }}>
+                <label style={{ display: 'grid', gap: '8px', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 500 }}>
+                  Goal name
+                  <input type="text" placeholder="Enter target objective" value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
+                </label>
+                <label style={{ display: 'grid', gap: '8px', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 500 }}>
+                  Description & Definition
+                  <textarea rows="3" placeholder="What does success look like?" value={goalVision} onChange={(e) => setGoalVision(e.target.value)} />
+                </label>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <label style={{ display: 'grid', gap: '8px', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 500 }}>
+                    Global Deadline (Optional)
+                    <input type="date" />
+                  </label>
+                  <label style={{ display: 'grid', gap: '8px', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 500 }}>
+                    Prioritization
+                    <select>
+                      <option>High Priority</option>
+                      <option>Medium Priority</option>
+                      <option>Low Priority</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="modal-actions" style={{ marginTop: '16px' }}>
+                  <button type="button" className="ghost-btn" onClick={() => setCreationMode(null)}>Back</button>
+                  <button type="submit" className="primary-btn">Save Goal</button>
+                </div>
+              </form>
+            </>
+          )}
+
+          {creationMode === 'ai' && (
+            <AiGoalWizard 
+              goalName={goalName}
+              setGoalName={setGoalName}
+              goalVision={goalVision}
+              setGoalVision={setGoalVision}
+              onCancel={() => setCreationMode(null)}
+              onSaveWithTasks={(tasks) => addGoal(tasks)}
+            />
+          )}
+
         </ModalOverlay>
       )}
 
