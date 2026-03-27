@@ -42,10 +42,10 @@ export function TimerProvider({ children }) {
     setIsActive(false);
     if (mode === 'work') {
       setMode('shortBreak');
-      setTimeLeft(shortDur * 60);
+      setTimeLeft(Math.max(1, shortDur) * 60);
     } else {
       setMode('work');
-      setTimeLeft(workDur * 60);
+      setTimeLeft(Math.max(1, workDur) * 60);
     }
   };
 
@@ -53,7 +53,7 @@ export function TimerProvider({ children }) {
     let interval = null;
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft(t => t - 1);
+        setTimeLeft(t => (t <= 1 ? 0 : t - 1));
       }, 1000);
     } else if (isActive && timeLeft === 0) {
       setIsActive(false);
@@ -61,10 +61,10 @@ export function TimerProvider({ children }) {
       
       if (mode === 'work') {
         setMode('shortBreak');
-        setTimeLeft(shortDur * 60);
+        setTimeLeft(Math.max(1, shortDur) * 60);
       } else {
         setMode('work');
-        setTimeLeft(workDur * 60);
+        setTimeLeft(Math.max(1, workDur) * 60);
       }
     }
     return () => clearInterval(interval);
@@ -75,9 +75,9 @@ export function TimerProvider({ children }) {
   const setCustomMode = (newMode) => {
     setIsActive(false);
     setMode(newMode);
-    if (newMode === 'work') setTimeLeft(workDur * 60);
-    if (newMode === 'shortBreak') setTimeLeft(shortDur * 60);
-    if (newMode === 'longBreak') setTimeLeft(longDur * 60);
+    if (newMode === 'work') setTimeLeft(Math.max(1, workDur) * 60);
+    if (newMode === 'shortBreak') setTimeLeft(Math.max(1, shortDur) * 60);
+    if (newMode === 'longBreak') setTimeLeft(Math.max(1, longDur) * 60);
   };
 
   return (

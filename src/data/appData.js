@@ -1,6 +1,6 @@
 import { addDays, getDateKey } from '../utils/dateUtils';
 
-export const NAV_ITEMS = ['Home', 'Tasks', 'Focus', 'Goals', 'Calendar', 'Settings'];
+export const NAV_ITEMS = ['Home', 'Tasks', 'Goals', 'Focus', 'Calendar', 'Settings'];
 export const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const INITIAL_GOALS = [

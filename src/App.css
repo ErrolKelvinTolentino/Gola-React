@@ -1,5 +1,30 @@
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap");
 
+/* ── Global custom scrollbar ──────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.25);
+  border-radius: 99px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.55);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.25) transparent;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -19,6 +44,8 @@ body {
   --panel: #ffffff;
   --panel-strong: #ffffff;
   --line: rgba(15, 23, 42, 0.1);
+  --input-bg: rgba(255, 255, 255, 0.8);
+  --input-border: rgba(15, 23, 42, 0.15);
 
   /* Core Tri-Color Harmony */
   --blue: #3b82f6;
@@ -75,6 +102,8 @@ body {
   --panel: rgba(24, 24, 27, 0.65);
   --panel-strong: rgba(24, 24, 27, 0.95);
   --line: rgba(255, 255, 255, 0.1);
+  --input-bg: rgba(255, 255, 255, 0.04);
+  --input-border: rgba(255, 255, 255, 0.12);
 
   /* Core Tri-Color Harmony Dark variants */
   --blue: #60a5fa;
@@ -233,6 +262,30 @@ body {
   width: 80px;
 }
 
+.sidebar.collapsed .brand {
+  flex-direction: column;
+  padding: 0;
+}
+
+.sidebar.collapsed .brand-logo {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+}
+
+.sidebar.collapsed .brand-name {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.sidebar.collapsed .nav-label {
+  display: none;
+}
+
 .brand {
   display: flex;
   gap: 12px;
@@ -245,14 +298,17 @@ body {
 .brand-logo {
   width: 52px;
   height: 52px;
+  min-width: 52px;
   border-radius: 16px;
   object-fit: cover;
   box-shadow: var(--shadow);
+  transition: all 0.3s ease;
 }
 
-.brand strong {
+.brand-name {
   display: block;
   font-size: 1.5rem;
+  animation: fadeIn 0.3s ease;
   font-weight: 700;
   letter-spacing: -0.02em;
   background: linear-gradient(
@@ -280,9 +336,84 @@ body {
   text-align: left;
   font: inherit;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
   padding: 12px 14px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  position: relative;
+}
+
+.nav-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Sidebar Collapsed Tooltips
+───────────────────────────────────────────────────────────── */
+.sidebar.collapsed .nav-item::before {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%) translateX(2px);
+  border: 5px solid transparent;
+  border-right-color: var(--text);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+.sidebar.collapsed .nav-item::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%) translateX(12px);
+  background: var(--text);
+  color: var(--bg);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.sidebar.collapsed .nav-item:hover::before {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(8px);
+}
+
+.sidebar.collapsed .nav-item:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(18px);
+}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+}
+
+.nav-label {
+  white-space: nowrap;
+  font-weight: 500;
+  animation: fadeIn 0.3s ease;
+  display: inline-block;
 }
 
 .nav-item:hover {
@@ -308,7 +439,7 @@ body {
   min-height: 0;
   height: 100vh;
   max-height: 100vh;
-  padding: 28px 32px;
+  padding: 28px 32px 40px;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
@@ -380,7 +511,7 @@ body {
   -webkit-backdrop-filter: blur(24px);
   padding: 32px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .page-enter {
@@ -525,6 +656,19 @@ h3 {
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.two-col-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.two-col-equal {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
 
@@ -788,7 +932,8 @@ select {
   background-size: 16px;
   padding-right: 40px;
 }
-.app-shell.theme-dark select {
+.app-shell.theme-dark select,
+.modal-backdrop.theme-dark select {
   background-image: url('data:image/svg+xml;utf8,<svg fill="none" stroke="%23818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="6 9 12 15 18 9"/></svg>');
 }
 
@@ -796,7 +941,8 @@ select option {
   background-color: #ffffff;
   color: #0f172a;
 }
-.app-shell.theme-dark select option {
+.app-shell.theme-dark select option,
+.modal-backdrop.theme-dark select option {
   background-color: #1c1e2c;
   color: #f1f3f8;
 }
@@ -815,7 +961,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
 
-.app-shell.theme-dark input[type="date"]::-webkit-calendar-picker-indicator {
+.app-shell.theme-dark input[type="date"]::-webkit-calendar-picker-indicator,
+.modal-backdrop.theme-dark input[type="date"]::-webkit-calendar-picker-indicator {
   background-image: url('data:image/svg+xml;utf8,<svg fill="none" stroke="%23818cf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>');
 }
 
@@ -831,15 +978,21 @@ textarea:focus {
 }
 
 .app-shell.theme-dark input,
+.modal-backdrop.theme-dark input,
 .app-shell.theme-dark select,
-.app-shell.theme-dark textarea {
-  background: rgba(0, 0, 0, 0.2);
+.modal-backdrop.theme-dark select,
+.app-shell.theme-dark textarea,
+.modal-backdrop.theme-dark textarea {
+  background: var(--input-bg);
 }
 
 .app-shell.theme-dark input:focus,
+.modal-backdrop.theme-dark input:focus,
 .app-shell.theme-dark select:focus,
-.app-shell.theme-dark textarea:focus {
-  background: rgba(0, 0, 0, 0.4);
+.modal-backdrop.theme-dark select:focus,
+.app-shell.theme-dark textarea:focus,
+.modal-backdrop.theme-dark textarea:focus {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .task-form {
@@ -949,6 +1102,7 @@ textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   background: var(--panel);
   transition: all 0.2s ease;
@@ -1247,10 +1401,14 @@ textarea:focus {
   --accent-2: #b19bf8;
   --btn-shadow: 0 8px 16px -4px rgba(124, 58, 237, 0.35);
   --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.04);
+  --input-border: rgba(255, 255, 255, 0.12);
 }
 
 .modal-card {
-  width: min(560px, 100%);
+  width: min(720px, 100%);
+  max-height: 92vh;
+  overflow: hidden;        /* no outer scrollbar — inner body handles it */
   background: var(--bg);
   border: var(--glass-border);
   border-radius: 24px;
@@ -1324,7 +1482,7 @@ textarea:focus {
     min-height: 100vh;
     overflow: visible;
   }
-  .sidebar {
+  .sidebar, .sidebar.collapsed {
     position: sticky;
     top: 0;
     width: 100%;
@@ -1336,6 +1494,36 @@ textarea:focus {
     padding: 16px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   }
+  .sidebar-collapse-btn {
+    display: none !important;
+  }
+  .nav-item::before, .nav-item::after {
+    display: none !important;
+  }
+  .sidebar.collapsed .brand {
+    flex-direction: row;
+    padding: 0;
+  }
+  .sidebar.collapsed .brand-logo {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+  }
+  .sidebar.collapsed .brand-name {
+    display: block;
+  }
+  .sidebar.collapsed .nav-item {
+    justify-content: center; /* Still center icons if wrapped as tabs */
+    padding: 12px 14px;
+    flex: 1;
+  }
+  .sidebar .nav-item {
+    flex: 1;
+    justify-content: center;
+  }
+  .sidebar.collapsed .nav-label {
+    display: inline-block;
+  }
   .sidebar nav {
     flex-direction: row;
     flex-wrap: wrap;
@@ -1346,6 +1534,7 @@ textarea:focus {
   }
   .premium-layout,
   .cards-grid,
+  .two-col-layout,
   .hero-wrap {
     grid-template-columns: 1fr;
   }
@@ -1355,6 +1544,9 @@ textarea:focus {
   .fab-goal {
     right: 24px;
     bottom: 24px;
+    width: 64px;
+    height: 64px;
+    font-size: 2rem;
   }
   .main-panel {
     padding: 20px;
@@ -1363,15 +1555,26 @@ textarea:focus {
 
 @media (max-width: 620px) {
   .page {
-    padding: 20px;
+    padding: 16px;
+    border-radius: 20px;
   }
   .card {
     padding: 16px;
+    border-radius: 16px;
+  }
+  .modal-card {
+    padding: 24px 20px;
+    border-radius: 20px;
   }
   .top-bar {
     display: none;
   }
-  .task-form-row {
+  .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .task-form-row,
+  .two-col-equal {
     grid-template-columns: 1fr;
   }
   .brand strong {

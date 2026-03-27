@@ -180,6 +180,23 @@ function App() {
     setSettings((current) => ({ ...current, [key]: !current[key] }));
   };
 
+  const updateTask = (goalId, taskId, payload) => {
+    setGoals(current => current.map(g => {
+      if (g.id !== goalId) return g;
+      return {
+        ...g,
+        tasks: g.tasks.map(t => t.id === taskId ? { ...t, ...payload } : t)
+      };
+    }));
+  };
+
+  const completeGoal = (goalId, assessment) => {
+    setGoals(current => current.map(g => {
+      if (g.id !== goalId) return g;
+      return { ...g, status: 'completed', assessment };
+    }));
+  };
+
   const recurrenceText = (task) => getRecurrenceText(task, WEEK_DAYS);
 
   const renderActivePage = () => {
@@ -224,6 +241,8 @@ function App() {
           setGoalVision={setGoalVision}
           addGoal={addGoal}
           theme={theme}
+          updateTask={updateTask}
+          completeGoal={completeGoal}
         />
       );
     }

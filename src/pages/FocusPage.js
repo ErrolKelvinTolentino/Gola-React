@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { Target, X, Maximize, RotateCcw, Settings, StepForward, Headphones } from 'lucide-react';
 import { useTimer } from '../context/TimerContext';
+import { useNoise } from '../context/NoiseContext';
 
 function FocusPage({ activeTasksToday, toggleTaskDoneForToday }) {
   const { 
@@ -13,76 +14,8 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday }) {
   const [showMusic, setShowMusic] = useState(false);
   const containerRef = useRef(null);
 
-  // Audio state
-  const [activeNoise, setActiveNoise] = useState('none');
-  const noiseNodeRef = useRef(null);
-  const audioCtxRef = useRef(null);
-
-  const toggleNoise = (type) => {
-    if (activeNoise === type) {
-      if (noiseNodeRef.current) noiseNodeRef.current.disconnect();
-      setActiveNoise('none');
-      return;
-    }
-    
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const ctx = audioCtxRef.current;
-    if (ctx.state === 'suspended') ctx.resume();
-    
-    if (noiseNodeRef.current) noiseNodeRef.current.disconnect();
-
-    const bufferSize = ctx.sampleRate * 2;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-
-    if (type === 'White Noise') {
-      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-    } else if (type === 'Brown Noise') {
-      let lastOut = 0;
-      for (let i = 0; i < bufferSize; i++) {
-        let white = Math.random() * 2 - 1;
-        data[i] = (lastOut + (0.02 * white)) / 1.02;
-        lastOut = data[i];
-        data[i] *= 3.5; 
-      }
-    } else if (type === 'Pink Noise') {
-      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-      for (let i = 0; i < bufferSize; i++) {
-        let white = Math.random() * 2 - 1;
-        b0 = 0.99886 * b0 + white * 0.0555179;
-        b1 = 0.99332 * b1 + white * 0.0750759;
-        b2 = 0.96900 * b2 + white * 0.1538520;
-        b3 = 0.86650 * b3 + white * 0.3104856;
-        b4 = 0.55000 * b4 + white * 0.5329522;
-        b5 = -0.7616 * b5 - white * 0.0168980;
-        data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-        data[i] *= 0.11; // compensation
-        b6 = white * 0.115926;
-      }
-    }
-
-    const noiseSource = ctx.createBufferSource();
-    noiseSource.buffer = buffer;
-    noiseSource.loop = true;
-
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.05; // Low ambient volume
-    
-    noiseSource.connect(noiseGain);
-    noiseGain.connect(ctx.destination);
-    noiseSource.start();
-
-    noiseNodeRef.current = noiseGain;
-    setActiveNoise(type);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (noiseNodeRef.current) noiseNodeRef.current.disconnect();
-    };
-  }, []);
+  // Audio state (global — persists across pages)
+  const { activeNoise, toggleNoise } = useNoise();
 
   const handleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -217,7 +150,7 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday }) {
 
         {/* Center Typography & Controls */}
         <div style={{ textAlign: 'center', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
-          <div style={{ fontSize: '5rem', fontWeight: 300, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text)' }}>
+          <div style={{ fontSize: 'clamp(3.5rem, 15vw, 5rem)', fontWeight: 300, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1, color: 'var(--text)' }}>
             {formatTime(timeLeft)}
           </div>
           
@@ -254,7 +187,7 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday }) {
       )}
 
       {/* Minimalist Bottom Toolbar matching the screenshot exactly */}
-      <div style={{ position: 'absolute', bottom: '32px', display: 'flex', gap: '48px', alignItems: 'center', zIndex: 10 }}>
+      <div style={{ position: 'absolute', bottom: '32px', left: '16px', right: '16px', display: 'flex', flexWrap: 'wrap', gap: 'clamp(20px, 5vw, 48px)', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}>
         
         <button onClick={handleFullscreen} style={{ background: 'transparent', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: 'var(--muted)', cursor: 'pointer', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color='var(--text)'} onMouseOut={e => e.currentTarget.style.color='var(--muted)'}>
           <Maximize size={20} />

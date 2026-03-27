@@ -27,7 +27,7 @@ function HomePage({ goalsCount, allTaskCount, activeTasksCount, completionRate, 
       </div>
 
       {/* 2. Top Overview Metrics (Full width grid) */}
-      <div className="cards-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+      <div className="cards-grid" style={{ marginBottom: '24px' }}>
 
         <article className="card premium-surface" style={{ padding: '20px', background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)', color: 'white', border: 'none' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -68,7 +68,7 @@ function HomePage({ goalsCount, allTaskCount, activeTasksCount, completionRate, 
 
       {/* 3. Analytics & Auxiliary Data (2 Columns) */}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '20px', alignItems: 'start' }}>
+      <div className="two-col-layout">
 
         {/* Left Column: Trend Graph & Quotes */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, Target, CheckSquare, Calendar, Settings, Timer, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Target, CheckSquare, Calendar, Settings, Timer, ChevronLeft } from 'lucide-react';
 import golaLogo from '../../assets/gola-logo.png';
 
 const ICON_MAP = {
@@ -16,54 +16,48 @@ function Sidebar({ navItems, activePage, onChangePage }) {
 
   return (
     <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
-      
-      <div className="brand" style={{ display: 'flex', flexDirection: isCollapsed ? 'column' : 'row', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: isCollapsed ? '0' : '4px', height: 'auto', marginBottom: '16px' }}>
+      <div className="brand" style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <img 
             src={golaLogo} 
             alt="Gola logo" 
             className="brand-logo" 
-            style={{ 
-              width: isCollapsed ? '36px' : '52px', 
-              height: isCollapsed ? '36px' : '52px', 
-              minWidth: isCollapsed ? '36px' : '52px', 
-              transition: 'all 0.3s ease' 
-            }} 
           />
-          {!isCollapsed && <strong style={{ animation: 'fadeIn 0.3s ease' }}>GOLA</strong>}
+          <strong className="brand-name">GOLA</strong>
         </div>
         
         <button 
-          className="ghost-btn" 
+          className="ghost-btn sidebar-collapse-btn" 
           onClick={() => setIsCollapsed(!isCollapsed)} 
           style={{ padding: '6px', borderRadius: '8px' }}
           title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          aria-expanded={!isCollapsed}
+          aria-label="Toggle Sidebar"
         >
-          {isCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+          <ChevronLeft 
+            size={20} 
+            style={{ 
+              transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)', 
+              transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' 
+            }} 
+          />
         </button>
       </div>
 
-      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+      <nav style={{ flex: 1, marginTop: '16px' }}>
         {navItems.map((item) => (
           <button
             key={item}
             type="button"
             className={activePage === item ? 'nav-item active' : 'nav-item'}
             onClick={() => onChangePage(item)}
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: isCollapsed ? 'center' : 'flex-start', 
-              gap: '16px', 
-              padding: isCollapsed ? '12px 0' : '12px 16px',
-              borderRadius: '12px'
-            }}
             title={isCollapsed ? item : ''}
+            aria-current={activePage === item ? 'page' : undefined}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '24px' }}>
+            <div className="nav-icon">
               {ICON_MAP[item]}
             </div>
-            {!isCollapsed && <span style={{ whiteSpace: 'nowrap', fontWeight: 500, animation: 'fadeIn 0.3s ease' }}>{item}</span>}
+            <span className="nav-label">{item}</span>
           </button>
         ))}
       </nav>

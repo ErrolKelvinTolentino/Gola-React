@@ -5,12 +5,15 @@ import App from './App';
 import reportWebVitals from './reportWebVitals';
 
 import { TimerProvider } from './context/TimerContext';
+import { NoiseProvider } from './context/NoiseContext';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <TimerProvider>
-      <App />
+      <NoiseProvider>
+        <App />
+      </NoiseProvider>
     </TimerProvider>
   </React.StrictMode>
 );

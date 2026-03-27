@@ -38,7 +38,7 @@ function CalendarPage({ goals, weekDays, todayKey, compactCalendar }) {
   );
 
   return (
-    <section className="page page-enter" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 1.5fr)', gap: '24px', alignItems: 'start' }}>
+    <section className="page page-enter two-col-layout">
       
       {/* Left Column: The Interactive Heatmap */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
