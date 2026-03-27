@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import HomePage from './pages/HomePage';
@@ -7,7 +8,12 @@ import GoalsPage from './pages/GoalsPage';
 import CalendarPage from './pages/CalendarPage';
 import SettingsPage from './pages/SettingsPage';
 import FocusPage from './pages/FocusPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ProfilePage from './pages/ProfilePage';
 import GlobalTimerWidget from './components/GlobalTimerWidget';
+import GlobalStyles from './styles/GlobalStyles';
+import { AppShell, AuroraLayer, MainPanel, FocusWrap } from './styles/AppLayout';
 import { DEFAULT_SETTINGS, DEFAULT_TASK_FORM, INITIAL_GOALS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
 import {
   buildCalendarCells,
@@ -17,12 +23,33 @@ import {
   isTaskDoneForDate,
   prettyDate
 } from './utils/dateUtils';
-import './App.css';
-import './Animations.css';
 
-function App() {
+const USER_STORAGE_KEY = 'gola.mock.user';
+const ACCOUNT_STORAGE_KEY = 'gola.mock.account';
+const THEME_STORAGE_KEY = 'gola.mock.theme';
+
+const parseStoredJson = (key) => {
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    return null;
+  }
+};
+
+const getNameFromEmail = (email) => {
+  const local = (email || 'user').split('@')[0] || 'user';
+  return local
+    .split(/[._-]/g)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
+  const navigate = useNavigate();
   const [activePage, setActivePage] = useState('Home');
-  const [theme, setTheme] = useState('light');
   const [goals, setGoals] = useState(INITIAL_GOALS);
   const [selectedGoalId, setSelectedGoalId] = useState(null);
   const [goalName, setGoalName] = useState('');
@@ -293,23 +320,149 @@ function App() {
   };
 
   return (
-    <div className={`app-shell theme-${theme}`}>
-      <div className="aurora aurora-a" />
-      <div className="aurora aurora-b" />
-      <div className="aurora aurora-c" />
+    <AppShell $themeMode={theme}>
+      <AuroraLayer $variant="aurora-a" />
+      <AuroraLayer $variant="aurora-b" />
+      <AuroraLayer $variant="aurora-c" />
 
-      <Sidebar navItems={NAV_ITEMS} activePage={activePage} onChangePage={setActivePage} />
+      <Sidebar navItems={NAV_ITEMS.filter((item) => item !== 'Settings')} activePage={activePage} onChangePage={setActivePage} />
       <GlobalTimerWidget activePage={activePage} setActivePage={setActivePage} />
 
-      <main className={`main-panel${activePage === 'Focus' ? ' focus-mode' : ''}`}>
-        <TopBar date={today} activePage={activePage} />
+      <MainPanel $focusMode={activePage === 'Focus'}>
+        <TopBar
+          date={today}
+          activePage={activePage}
+          user={user}
+          onOpenProfile={() => navigate('/profile')}
+          onOpenSettings={() => setActivePage('Settings')}
+          onLogout={onLogout}
+        />
         {activePage === 'Focus' ? (
-          <div className="focus-wrap">
+          <FocusWrap>
             {renderActivePage()}
-          </div>
+          </FocusWrap>
         ) : renderActivePage()}
-      </main>
-    </div>
+      </MainPanel>
+    </AppShell>
+  );
+}
+
+function App() {
+  const [user, setUser] = useState(() => parseStoredJson(USER_STORAGE_KEY));
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || 'light');
+
+  useEffect(() => {
+    if (!user) {
+      localStorage.removeItem(USER_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  }, [user]);
+
+  useEffect(() => {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  const handleLogin = ({ email, password }) => {
+    const account = parseStoredJson(ACCOUNT_STORAGE_KEY);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // No backend: validate against locally stored mock account or a demo credential pair.
+    if (account?.email) {
+      const accountEmail = account.email.toLowerCase();
+      if (normalizedEmail !== accountEmail || password !== account.password) {
+        return { ok: false, message: 'Wrong email or password.' };
+      }
+    } else {
+      const demoEmail = 'demo@gola.app';
+      const demoPassword = 'demo1234';
+      if (normalizedEmail !== demoEmail || password !== demoPassword) {
+        return { ok: false, message: 'Wrong email or password. Use demo@gola.app / demo1234 or register first.' };
+      }
+    }
+
+    const nextUser = {
+      name:
+        account && account.email?.toLowerCase() === normalizedEmail
+          ? account.name
+          : getNameFromEmail(email),
+      email: email.trim()
+    };
+
+    setUser(nextUser);
+    return { ok: true };
+  };
+
+  const handleRegister = ({ name, email, password }) => {
+    const account = {
+      name,
+      email,
+      password,
+      createdAt: Date.now()
+    };
+
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(account));
+    setUser({ name, email });
+  };
+
+  const handleSaveProfile = ({ name, email, password }) => {
+    const safeName = name?.trim() || getNameFromEmail(email || user?.email);
+    const safeEmail = email?.trim() || user?.email || '';
+
+    const nextUser = {
+      ...user,
+      name: safeName,
+      email: safeEmail
+    };
+
+    setUser(nextUser);
+
+    const account = parseStoredJson(ACCOUNT_STORAGE_KEY) || {};
+    localStorage.setItem(
+      ACCOUNT_STORAGE_KEY,
+      JSON.stringify({
+        ...account,
+        name: safeName,
+        email: safeEmail,
+        password: password || account.password || '',
+        updatedAt: Date.now()
+      })
+    );
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+  };
+
+  return (
+    <BrowserRouter>
+      <GlobalStyles />
+      <Routes>
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/app" replace /> : <LoginPage onLogin={handleLogin} theme={theme} />}
+        />
+        <Route
+          path="/register"
+          element={user ? <Navigate to="/app" replace /> : <RegisterPage onRegister={handleRegister} theme={theme} />}
+        />
+        <Route
+          path="/app"
+          element={user ? <DashboardWorkspace user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/profile"
+          element={
+            user ? (
+              <ProfilePage user={user} theme={theme} onSaveProfile={handleSaveProfile} onLogout={handleLogout} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route path="*" element={<Navigate to={user ? '/app' : '/login'} replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

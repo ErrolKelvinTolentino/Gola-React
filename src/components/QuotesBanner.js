@@ -1,5 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import './QuotesBanner.css';
+import styled from 'styled-components';
+
+const Banner = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--panel-strong);
+  border: var(--glass-border);
+  padding: 16px 24px;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  animation: slideFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+  animation-delay: 0.2s;
+`;
+
+const QuoteIcon = styled.div`
+  font-size: 1.8rem;
+  margin-right: 4px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+`;
+
+const QuoteText = styled.p`
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text);
+  font-style: italic;
+  animation: fadeIn 1s ease forwards;
+`;
 
 const QUOTES = [
   "Focus on the step in front of you, not the whole staircase.",
@@ -29,16 +61,12 @@ function QuotesBanner() {
   }, []);
 
   return (
-    <div className="quotes-banner premium-surface" style={{ animation: 'slideFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards', opacity: 0, animationDelay: '0.2s' }}>
-      <div className="quote-icon" style={{ fontSize: '1.8rem', marginRight: '4px' }}>✨</div>
-      <p 
-        key={quoteIdx} 
-        className="quote-text" 
-        style={{ margin: 0, fontSize: '1.05rem', fontWeight: 500, color: 'var(--text)', fontStyle: 'italic', animation: 'fadeIn 1s ease forwards' }}
-      >
+    <Banner className="premium-surface">
+      <QuoteIcon>✨</QuoteIcon>
+      <QuoteText key={quoteIdx}>
         "{QUOTES[quoteIdx]}"
-      </p>
-    </div>
+      </QuoteText>
+    </Banner>
   );
 }
 

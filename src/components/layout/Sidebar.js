@@ -13,6 +13,7 @@ const ICON_MAP = {
 
 function Sidebar({ navItems, activePage, onChangePage }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const handleToggleSidebar = () => setIsCollapsed((prev) => !prev);
 
   return (
     <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
@@ -21,15 +22,17 @@ function Sidebar({ navItems, activePage, onChangePage }) {
           <img 
             src={golaLogo} 
             alt="Gola logo" 
-            className="brand-logo" 
+            className="brand-logo"
+            style={{ marginBottom: '6px' }}
           />
           <strong className="brand-name">GOLA</strong>
         </div>
         
         <button 
+          type="button"
           className="ghost-btn sidebar-collapse-btn" 
-          onClick={() => setIsCollapsed(!isCollapsed)} 
-          style={{ padding: '6px', borderRadius: '8px' }}
+          onClick={handleToggleSidebar}
+          style={{ padding: '6px', borderRadius: '8px', marginBottom: '6px' }}
           title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           aria-expanded={!isCollapsed}
           aria-label="Toggle Sidebar"
