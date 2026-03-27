@@ -7,3 +7,4 @@ test('renders Gola brand and navigation', () => {
   expect(screen.getByRole('button', { name: /tasks/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /goals/i })).toBeInTheDocument();
 });
+// hi
