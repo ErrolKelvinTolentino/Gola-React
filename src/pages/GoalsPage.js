@@ -696,90 +696,110 @@ function GoalsPage({
             const daily = selectedGoal.tasks.filter(t => t.recurrenceType === 'daily');
             const weekly = selectedGoal.tasks.filter(t => t.recurrenceType === 'weekly' || t.recurrenceType === 'specific-days');
 
+            const useUnifiedFinishedSection = taskFilter === 'all' || taskFilter === 'today' || taskFilter === 'done';
+            const allFilteredTasks = selectedGoal.tasks.filter(taskMatches);
+            const unifiedFinishedTasks = allFilteredTasks.filter((task) => isTaskDoneForDate(task, today));
+
+            const renderTaskRows = (taskRows, keyPrefix = 'row') => (
+              <ul className="task-list goals-task-list" style={{ gap: '0', alignContent: 'start' }}>
+                {taskRows.map((task, idx) => {
+                  const activeToday = isTaskActiveOnDate(task, today);
+                  const doneToday = isTaskDoneForDate(task, today);
+                  const rowKey = `${keyPrefix}-${task.id}-${task.recurrenceType || 'na'}-${task.deadline || 'na'}-${idx}`;
+                  return (
+                    <li
+                      key={rowKey}
+                      className={doneToday ? 'task-row goals-task-row done' : 'task-row goals-task-row'}
+                      onMouseEnter={() => setHoveredTaskId(rowKey)}
+                      onMouseLeave={() => {
+                        setHoveredTaskId(null);
+                        setPressedTaskId(null);
+                      }}
+                      onMouseDown={() => setPressedTaskId(rowKey)}
+                      onMouseUp={() => setPressedTaskId(null)}
+                      style={{
+                        border: 'none',
+                        borderBottom: idx === taskRows.length - 1 ? 'none' : '1px solid var(--line)',
+                        borderRadius: '0',
+                        padding: denseMode ? '8px 10px' : '11px 12px',
+                        background: doneToday ? 'var(--bg-2)' : (idx % 2 === 0 ? 'var(--panel)' : 'var(--panel-strong)'),
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        alignItems: 'start',
+                        gap: '10px',
+                        animation: 'none',
+                        opacity: 1,
+                        width: '100%',
+                        transform: pressedTaskId === rowKey ? 'scale(0.998)' : hoveredTaskId === rowKey ? 'translateY(-1px)' : 'translateY(0)',
+                        boxShadow: hoveredTaskId === rowKey ? '0 8px 18px rgba(15, 23, 42, 0.09)' : 'none',
+                        borderLeft: hoveredTaskId === rowKey || activeToday ? '2px solid color-mix(in oklab, var(--accent) 55%, transparent)' : '2px solid transparent',
+                        transition: 'transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-left-color 0.18s ease'
+                      }}
+                    >
+                      <div>
+                        <label style={{ fontSize: denseMode ? '0.9rem' : '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={doneToday}
+                            onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
+                            style={{ width: denseMode ? '20px' : '22px', height: denseMode ? '20px' : '22px', marginRight: '8px' }}
+                          />
+                          <span style={{ fontWeight: 600 }}>{task.title}</span>
+                        </label>
+                        <div className="task-meta" style={{ marginTop: denseMode ? '4px' : '6px', paddingLeft: '28px', gap: '8px', justifyContent: 'flex-start' }}>
+                          <small style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', opacity: 0.9 }}>
+                            <RotateCw size={14} /> {getRecurrenceText(task)}
+                          </small>
+                          {task.timeEstimate && <span className="meta-chip" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)', opacity: 0.86 }}>⏱ {task.timeEstimate}</span>}
+                          {task.energy && <span className="meta-chip" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)', opacity: 0.86 }}>⚡ {task.energy}</span>}
+                          <span className={activeToday ? 'meta-chip good' : 'meta-chip'}>
+                            {activeToday ? 'Active today' : 'Not today'}
+                          </span>
+                          {task.deadline && (
+                            <span className="meta-chip highlight">
+                              <CalendarIcon size={12} /> {prettyDate(task.deadline)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button className="ghost-btn" style={{ padding: denseMode ? '5px' : '6px', minHeight: denseMode ? '28px' : '30px', minWidth: denseMode ? '28px' : '30px' }} onClick={() => setEditingTask(task)} title="Edit Task metrics">
+                        <Edit2 size={14} color="var(--muted)" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            );
+
             const renderList = (tasks, emptyObj) => {
               const filteredTasks = tasks.filter(taskMatches);
+              const primaryTasks = useUnifiedFinishedSection
+                ? filteredTasks.filter((task) => !isTaskDoneForDate(task, today))
+                : filteredTasks;
 
               if (filteredTasks.length === 0 && !emptyObj) return null;
+
+              if (primaryTasks.length === 0 && filteredTasks.length > 0) return null;
+
               return (
-                <div style={{ padding: '0', overflow: 'hidden', borderRadius: '12px', border: '1px solid var(--line)', marginBottom: '16px', background: 'var(--panel-strong)', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.06)' }}>
-                  <ul className="task-list" style={{ gap: '0' }}>
-                    {filteredTasks.length === 0 && emptyObj && (
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  <div style={{ padding: '0', overflow: 'visible', borderRadius: '12px', border: '1px solid var(--line)', marginBottom: '0', background: 'var(--panel-strong)', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.06)' }}>
+                    {primaryTasks.length === 0 && emptyObj && (
                       <li className="empty-row" style={{ padding: '40px 20px', flexDirection: 'column', gap: '16px', background: 'transparent' }}>
                         <CheckCircle2 color="var(--muted)" size={48} />
                         <div style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text)' }}>{taskQuery ? 'No task matched your search/filter.' : emptyObj.title}</div>
                         <p style={{ margin: 0 }}>{taskQuery ? 'Try clearing search or switching filters.' : emptyObj.desc}</p>
                       </li>
                     )}
-                    {filteredTasks.map((task, idx) => {
-                      const activeToday = isTaskActiveOnDate(task, today);
-                      const doneToday = isTaskDoneForDate(task, today);
-                      return (
-                        <li 
-                          key={task.id} 
-                          className={doneToday ? 'task-row done' : 'task-row'}
-                          onMouseEnter={() => setHoveredTaskId(task.id)}
-                          onMouseLeave={() => {
-                            setHoveredTaskId(null);
-                            setPressedTaskId(null);
-                          }}
-                          onMouseDown={() => setPressedTaskId(task.id)}
-                          onMouseUp={() => setPressedTaskId(null)}
-                          style={{
-                            border: 'none',
-                            borderBottom: idx === filteredTasks.length - 1 ? 'none' : '1px solid var(--line)',
-                            borderRadius: '0',
-                            padding: denseMode ? '8px 10px' : '11px 12px',
-                            background: doneToday ? 'var(--bg-2)' : (idx % 2 === 0 ? 'var(--panel)' : 'var(--panel-strong)'),
-                            display: 'grid',
-                            gridTemplateColumns: '1fr auto',
-                            alignItems: 'center',
-                            gap: '10px',
-                            transform: pressedTaskId === task.id ? 'scale(0.998)' : hoveredTaskId === task.id ? 'translateY(-1px)' : 'translateY(0)',
-                            boxShadow: hoveredTaskId === task.id ? '0 8px 18px rgba(15, 23, 42, 0.09)' : 'none',
-                            borderLeft: hoveredTaskId === task.id || activeToday ? '2px solid color-mix(in oklab, var(--accent) 55%, transparent)' : '2px solid transparent',
-                            transition: 'transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-left-color 0.18s ease'
-                          }}
-                        >
-                          <div>
-                            <label style={{ fontSize: denseMode ? '0.9rem' : '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                              <input
-                                type="checkbox"
-                                checked={doneToday}
-                                onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
-                                style={{ width: denseMode ? '20px' : '22px', height: denseMode ? '20px' : '22px', marginRight: '8px' }}
-                              />
-                              <span style={{ fontWeight: 600 }}>{task.title}</span>
-                            </label>
-                            <div className="task-meta" style={{ marginTop: denseMode ? '4px' : '6px', paddingLeft: '28px', gap: '8px' }}>
-                              <small style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', opacity: 0.9 }}>
-                                <RotateCw size={14} /> {getRecurrenceText(task)}
-                              </small>
-                              {task.timeEstimate && <span className="meta-chip" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)', opacity: 0.86 }}>⏱ {task.timeEstimate}</span>}
-                              {task.energy && <span className="meta-chip" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)', opacity: 0.86 }}>⚡ {task.energy}</span>}
-                              <span className={activeToday ? 'meta-chip good' : 'meta-chip'}>
-                                {activeToday ? 'Active today' : 'Not today'}
-                              </span>
-                              {task.deadline && (
-                                <span className="meta-chip highlight">
-                                  <CalendarIcon size={12} /> {prettyDate(task.deadline)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <button className="ghost-btn" style={{ padding: denseMode ? '5px' : '6px', minHeight: denseMode ? '28px' : '30px', minWidth: denseMode ? '28px' : '30px' }} onClick={() => setEditingTask(task)} title="Edit Task metrics">
-                            <Edit2 size={14} color="var(--muted)" />
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                    {primaryTasks.length > 0 && renderTaskRows(primaryTasks, 'primary')}
+                  </div>
                 </div>
               );
             };
 
             return (
-              <div style={{ display: 'grid', gap: '2px', maxHeight: 'calc(100vh - 300px)', overflowY: 'auto', paddingRight: '2px' }}>
+              <div style={{ display: 'grid', gap: '10px', paddingRight: '0', overflow: 'visible' }}>
                 {progress === 100 && !isCompleted && (
                   <div style={{ animation: 'elegantFadeIn 0.4s ease forwards', padding: '24px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '24px', justifyContent: 'space-between' }}>
                     <div>
@@ -805,18 +825,46 @@ function GoalsPage({
                   </div>
                 )}
 
-                <div className="section-head compact" style={{ marginTop: '8px', marginBottom: '8px' }}>
-                  <h3 style={{ fontSize: '1.18rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Milestones & One-Time Actions</h3>
-                </div>
-                {renderList(oneTime, { title: 'No milestones mapped.', desc: 'Create one-time actionable steps for this goal.' })}
+                {taskFilter !== 'done' && (
+                  <>
+                    <div className="section-head compact" style={{ marginTop: '8px', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '1.18rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Milestones & One-Time Actions</h3>
+                    </div>
+                    {renderList(oneTime, { title: 'No milestones mapped.', desc: 'Create one-time actionable steps for this goal.' })}
 
-                {(daily.length > 0 || weekly.length > 0) && (
-                  <div className="section-head compact" style={{ marginTop: '24px', marginBottom: '10px', paddingTop: '14px', borderTop: '1px solid var(--line)' }}>
-                    <h3 style={{ fontSize: '1.18rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Recurring Execution Flow</h3>
+                    {(daily.length > 0 || weekly.length > 0) && (
+                      <div className="section-head compact" style={{ marginTop: '24px', marginBottom: '10px', paddingTop: '14px', borderTop: '1px solid var(--line)' }}>
+                        <h3 style={{ fontSize: '1.18rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Recurring Execution Flow</h3>
+                      </div>
+                    )}
+                    {renderList(daily)}
+                    {renderList(weekly)}
+                  </>
+                )}
+
+                {useUnifiedFinishedSection && unifiedFinishedTasks.length > 0 && (
+                  <div style={{ display: 'grid', gap: '8px', marginTop: taskFilter === 'done' ? '6px' : '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '2px' }}>
+                      <CheckCircle2 size={14} color="var(--muted)" />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.01em', color: 'var(--muted)', textTransform: 'uppercase' }}>
+                        Finished Tasks ({unifiedFinishedTasks.length})
+                      </span>
+                    </div>
+                    <div style={{ padding: '0', overflow: 'visible', borderRadius: '12px', border: '1px dashed var(--line)', background: 'var(--bg-2)' }}>
+                      {renderTaskRows(unifiedFinishedTasks, 'finished')}
+                    </div>
                   </div>
                 )}
-                {renderList(daily)}
-                {renderList(weekly)}
+
+                {taskFilter === 'done' && unifiedFinishedTasks.length === 0 && (
+                  <div style={{ padding: '0', overflow: 'visible', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel-strong)', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.06)' }}>
+                    <li className="empty-row" style={{ padding: '40px 20px', flexDirection: 'column', gap: '16px', background: 'transparent' }}>
+                      <CheckCircle2 color="var(--muted)" size={48} />
+                      <div style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text)' }}>No finished tasks yet.</div>
+                      <p style={{ margin: 0 }}>Completed tasks from all schedules will appear here.</p>
+                    </li>
+                  </div>
+                )}
               </div>
             );
           })()}
