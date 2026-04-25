@@ -569,7 +569,7 @@ function GoalsPage({
               WebkitBackdropFilter: 'blur(10px)'
             }}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(220px, 1fr) auto auto', gap: '8px', alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: '8px', alignItems: 'center' }}>
               <button type="button" className="ghost-btn back-goals-btn" onClick={handleBackToGoals} style={{ padding: '8px 10px' }}>
                 Back
               </button>
