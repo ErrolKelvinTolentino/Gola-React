@@ -1,6 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import AuthLayout from '../components/auth/AuthLayout';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { auth, db } from '../firebase/config';
+import { doc, setDoc } from 'firebase/firestore';
 
 function RegisterPage({ onRegister, theme = 'light' }) {
   const isDark = theme === 'dark';
@@ -14,7 +17,7 @@ function RegisterPage({ onRegister, theme = 'light' }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!name.trim() || !email.trim() || !password.trim()) {
@@ -28,11 +31,34 @@ function RegisterPage({ onRegister, theme = 'light' }) {
     }
 
     setError('');
-    onRegister({
-      name: name.trim(),
-      email: email.trim(),
-      password
-    });
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const user = userCredential.user;
+      
+      await updateProfile(user, { displayName: name.trim() });
+      
+      await setDoc(doc(db, 'users', user.uid), {
+        email: user.email,
+        displayName: name.trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      await setDoc(doc(db, 'users', user.uid, 'app', 'state'), {
+        goals: [],
+        focusSessions: [],
+        streak: 0,
+        lastActiveDate: null,
+        theme: 'light',
+        aiEnabled: true,
+        settings: {},
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      
+    } catch (err) {
+      setError('Registration failed: ' + err.message);
+    }
   };
 
   return (

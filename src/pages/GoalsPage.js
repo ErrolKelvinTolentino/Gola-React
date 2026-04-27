@@ -1,13 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Target, RotateCw, Calendar as CalendarIcon, CheckCircle2, Cpu, Edit2, Trophy, MessageSquare, Plus } from 'lucide-react';
+import {
+  Target, RotateCw, Calendar as CalendarIcon, CheckCircle2, Cpu,
+  Edit2, Trophy, Plus, Search, X, SlidersHorizontal, LayoutList,
+  Flame, Zap, Clock, BarChart3, BookOpen, Star, ChevronRight,
+  Filter, ArrowUpDown, GripVertical
+} from 'lucide-react';
 import { getGoalProgress, getDateKey } from '../utils/dateUtils';
 import AiGoalWizard from '../components/AiGoalWizard';
 
-function ModalOverlay({ onClose, children, theme }) {
+/* ═══════════════════════════════════════════════════════════════════
+   ModalOverlay — portal-based modal wrapper
+═══════════════════════════════════════════════════════════════════ */
+function ModalOverlay({ onClose, children }) {
   return createPortal(
-    <div className={`modal-backdrop theme-${theme}`} onClick={onClose}>
-      <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-card" onClick={e => e.stopPropagation()}>
         {children}
       </div>
     </div>,
@@ -15,933 +23,776 @@ function ModalOverlay({ onClose, children, theme }) {
   );
 }
 
-const FieldBox = ({ children, style }) => (
-  <div style={{ padding: 'clamp(10px, 1.8vw, 14px)', background: 'var(--panel)', borderRadius: '12px', border: '1px solid var(--line)', display: 'grid', gap: 'clamp(10px, 1.5vw, 14px)', ...style }}>
-    {children}
-  </div>
-);
-
-const StepBadge = ({ active, done, children }) => (
-  <span
-    style={{
-      width: '26px',
-      height: '26px',
-      borderRadius: '999px',
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: '0.76rem',
-      fontWeight: 700,
-      border: done || active ? '1px solid transparent' : '1px solid var(--line)',
-      background: done ? 'linear-gradient(135deg, #10b981, #14b8a6)' : active ? 'linear-gradient(135deg, var(--accent), var(--accent-2))' : 'var(--panel)',
-      color: done || active ? '#fff' : 'var(--muted)'
-    }}
-  >
-    {done ? '✓' : children}
-  </span>
-);
-
-function FormStepHeader({ step, labels, title, subtitle }) {
-  return (
-    <div style={{ display: 'grid', gap: '10px', marginBottom: '6px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
-        {labels.map((label, idx) => {
-          const stepIndex = idx + 1;
-          const active = step === stepIndex;
-          const done = step > stepIndex;
-          return (
-            <div
-              key={label}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 8px',
-                borderRadius: '10px',
-                border: active ? '1px solid color-mix(in oklab, var(--accent) 50%, transparent)' : '1px solid var(--line)',
-                background: active ? 'color-mix(in oklab, var(--accent) 10%, var(--panel))' : 'var(--panel)'
-              }}
-            >
-              <StepBadge active={active} done={done}>{stepIndex}</StepBadge>
-              <span style={{ fontSize: '0.78rem', color: active ? 'var(--text)' : 'var(--muted)', fontWeight: 600 }}>{label}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div>
-        <h3 style={{ margin: '0 0 2px', fontSize: '1.15rem' }}>{title}</h3>
-        <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1.35 }}>{subtitle}</p>
-      </div>
-    </div>
-  );
-}
-
-function GoalTaskForm({ title, subtitle, form, onChange, onSubmit, onCancel, weekDays, isEdit, toggleSpecificDayHandler }) {
+/* ═══════════════════════════════════════════════════════════════════
+   GoalTaskForm — 3-step wizard for adding/editing a single task
+═══════════════════════════════════════════════════════════════════ */
+function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isEdit, toggleSpecificDayHandler }) {
   const [step, setStep] = useState(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const nextStep = () => setStep((prev) => Math.min(prev + 1, 3));
-  const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (step < 3) {
-      nextStep();
-      return;
-    }
-    onSubmit(event);
+  const handleSubmit = e => {
+    e.preventDefault();
+    if (step < 3) return setStep(s => s + 1);
+    onSubmit(e);
   };
 
-  const cadenceLabel =
-    form.recurrenceType === 'one-time'
-      ? 'One-time milestone'
-      : form.recurrenceType === 'daily'
-        ? 'Daily habit'
-        : form.recurrenceType === 'weekly'
-          ? `Weekly on ${weekDays[form.weeklyDay]}`
-          : `Specific days (${form.specificDays.map((d) => weekDays[d]).join(', ') || 'none'})`;
+  const cadenceLabel = form.recurrenceType === 'one-time'
+    ? 'One-time milestone'
+    : form.recurrenceType === 'daily'
+    ? 'Daily habit'
+    : form.recurrenceType === 'weekly'
+    ? `Weekly on ${weekDays[form.weeklyDay]}`
+    : `On ${form.specificDays.map(d => weekDays[d]).join(', ') || 'selected days'}`;
 
   return (
-    <form className="modal-form" onSubmit={handleSubmit} style={{ display: 'grid', gap: '12px', width: 'min(100%, 760px)', margin: '0 auto' }}>
-      <FormStepHeader
-        step={step}
-        labels={['Core', 'Schedule', 'Review']}
-        title={title}
-        subtitle={subtitle}
-      />
+    <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px', width: 'min(100%, 600px)', margin: '0 auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+        <h3 style={{ margin: 0, fontSize: '1.15rem' }}>{title}</h3>
+        <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600, marginLeft: 'auto' }}>
+          Step {step}/3
+        </span>
+      </div>
 
       {step === 1 && (
         <>
-          <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.93rem', fontWeight: 600 }}>
-            Task title
-            <input type="text" placeholder="What needs to get done?" value={form.title} onChange={e => onChange({ title: e.target.value })} required />
-          </label>
-
-          <FieldBox>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-              <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                Time estimate
-                <select value={form.timeEstimate || '30m'} onChange={e => onChange({ timeEstimate: e.target.value })}>
-                  <option value="15m">15 min (Quick Win)</option>
-                  <option value="30m">30 min (Standard)</option>
-                  <option value="1h">1 hour (Focused)</option>
-                  <option value="2h+">2+ hours (Deep Work)</option>
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                Energy context
-                <select value={form.energy || 'Medium'} onChange={e => onChange({ energy: e.target.value })}>
-                  <option value="Low">Low (Maintenance/Admin)</option>
-                  <option value="Medium">Medium (Standard)</option>
-                  <option value="High">High (Creative/Complex)</option>
-                </select>
-              </label>
-            </div>
-          </FieldBox>
+          <input
+            type="text"
+            placeholder="Task title"
+            value={form.title}
+            onChange={e => onChange({ title: e.target.value })}
+            required
+            autoFocus
+            style={{ fontSize: '1rem', padding: '12px 16px' }}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <select value={form.timeEstimate || '30m'} onChange={e => onChange({ timeEstimate: e.target.value })}>
+              <option value="15m">15 min</option>
+              <option value="30m">30 min</option>
+              <option value="1h">1 hour</option>
+              <option value="2h+">2+ hours</option>
+            </select>
+            <select value={form.energy || 'Medium'} onChange={e => onChange({ energy: e.target.value })}>
+              <option value="Low">Low energy</option>
+              <option value="Medium">Medium energy</option>
+              <option value="High">High energy</option>
+            </select>
+          </div>
         </>
       )}
 
       {step === 2 && (
         <>
-          <FieldBox style={{ background: 'color-mix(in oklab, var(--accent) 6%, var(--panel))', borderColor: 'color-mix(in oklab, var(--accent) 30%, var(--line))' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
-              <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                Execution rhythm
-                <select value={form.recurrenceType} onChange={e => onChange({ recurrenceType: e.target.value })}>
-                  <option value="one-time">One-time / Milestone</option>
-                  <option value="daily">Daily Habit</option>
-                  <option value="weekly">Weekly Routine</option>
-                  <option value="specific-days">Specific Days</option>
+          <select value={form.recurrenceType} onChange={e => onChange({ recurrenceType: e.target.value })}>
+            <option value="one-time">One-time</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="specific-days">Specific days</option>
+          </select>
+          <input type="date" value={form.deadline || ''} onChange={e => onChange({ deadline: e.target.value })} />
+          <button type="button" className="ghost-btn" onClick={() => setShowAdvanced(s => !s)}
+            style={{ justifySelf: 'start', fontSize: '0.82rem' }}>
+            {showAdvanced ? 'Hide details' : 'Show details'}
+          </button>
+          {showAdvanced && (
+            <div style={{ display: 'grid', gap: '8px', animation: 'elegantFadeIn 0.2s ease forwards' }}>
+              {form.recurrenceType === 'one-time' && (
+                <input type="date" value={form.oneTimeDate || ''} onChange={e => onChange({ oneTimeDate: e.target.value })} />
+              )}
+              {form.recurrenceType === 'weekly' && (
+                <select value={form.weeklyDay} onChange={e => onChange({ weeklyDay: Number(e.target.value) })}>
+                  {weekDays.map((d, i) => <option key={d} value={i}>{d}</option>)}
                 </select>
-              </label>
-
-              <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                Hard deadline
-                <input type="date" value={form.deadline || ''} onChange={e => onChange({ deadline: e.target.value })} />
-              </label>
+              )}
+              {form.recurrenceType === 'specific-days' && (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {weekDays.map((day, i) => (
+                    <button key={day} type="button"
+                      onClick={() => toggleSpecificDayHandler(i)}
+                      style={{
+                        padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--line)',
+                        background: form.specificDays.includes(i) ? 'var(--accent)' : 'var(--panel)',
+                        color: form.specificDays.includes(i) ? '#fff' : 'var(--muted)',
+                        cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600
+                      }}>{day.slice(0, 2)}</button>
+                  ))}
+                </div>
+              )}
             </div>
-
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => setShowAdvanced((prev) => !prev)}
-              style={{ justifySelf: 'start', padding: '8px 12px', fontSize: '0.82rem' }}
-            >
-              {showAdvanced ? 'Hide cadence details' : 'Show cadence details'}
-            </button>
-
-            {showAdvanced && (
-              <div style={{ display: 'grid', gap: '10px', animation: 'elegantFadeIn 0.2s ease forwards' }}>
-                {form.recurrenceType === 'one-time' && (
-                  <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                    Specific scheduled date (optional)
-                    <input type="date" value={form.oneTimeDate || ''} onChange={e => onChange({ oneTimeDate: e.target.value })} />
-                  </label>
-                )}
-
-                {form.recurrenceType === 'weekly' && (
-                  <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                    Day of the week
-                    <select value={form.weeklyDay} onChange={e => onChange({ weeklyDay: Number(e.target.value) })}>
-                      {weekDays.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select>
-                  </label>
-                )}
-
-                {form.recurrenceType === 'specific-days' && (
-                  <div className="week-picker" style={{ gap: '6px', marginTop: '2px' }}>
-                    {weekDays.map((day, i) => (
-                      <button
-                        key={day}
-                        type="button"
-                        className={form.specificDays.includes(i) ? 'day-chip active' : 'day-chip'}
-                        onClick={() => toggleSpecificDayHandler(i)}
-                        style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--line)', background: form.specificDays.includes(i) ? 'var(--accent)' : 'var(--panel)', color: form.specificDays.includes(i) ? '#fff' : 'var(--muted)' }}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </FieldBox>
+          )}
         </>
       )}
 
       {step === 3 && (
-        <FieldBox style={{ background: 'color-mix(in oklab, var(--panel) 88%, #10b981 12%)' }}>
-          <div style={{ display: 'grid', gap: '8px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '10px', alignItems: 'start' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Task</strong>
-              <span style={{ fontSize: '0.95rem', color: 'var(--text)', fontWeight: 600 }}>{form.title || 'Untitled task'}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '10px', alignItems: 'start' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Effort profile</strong>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text)' }}>{form.timeEstimate || '30m'} • {form.energy || 'Medium'} energy</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '10px', alignItems: 'start' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Cadence</strong>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text)' }}>{cadenceLabel}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '10px', alignItems: 'start' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Deadline</strong>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text)' }}>{form.deadline || 'No hard deadline'}</span>
-            </div>
+        <div style={{ display: 'grid', gap: '8px', padding: '14px', background: 'var(--bg-2)', borderRadius: '12px', border: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+            <span style={{ color: 'var(--muted)' }}>Title</span>
+            <span style={{ fontWeight: 600 }}>{form.title || 'Untitled'}</span>
           </div>
-        </FieldBox>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+            <span style={{ color: 'var(--muted)' }}>Effort</span>
+            <span style={{ fontWeight: 600 }}>{form.timeEstimate || '30m'} · {form.energy || 'Medium'}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+            <span style={{ color: 'var(--muted)' }}>Schedule</span>
+            <span style={{ fontWeight: 600 }}>{cadenceLabel}</span>
+          </div>
+        </div>
       )}
 
-      <div className="modal-actions" style={{ marginTop: '8px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '4px' }}>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button type="button" className="ghost-btn" onClick={onCancel} style={{ padding: '10px 16px' }}>Cancel</button>
-          {step > 1 && (
-            <button type="button" className="ghost-btn" onClick={prevStep} style={{ padding: '10px 16px' }}>
-              Back
-            </button>
-          )}
+          <button type="button" className="ghost-btn" onClick={onCancel}>Cancel</button>
+          {step > 1 && <button type="button" className="ghost-btn" onClick={() => setStep(s => s - 1)}>Back</button>}
         </div>
-        <button type="submit" className="primary-btn" style={{ padding: '10px 18px' }}>
-          {step < 3 ? 'Continue' : isEdit ? 'Save Changes' : 'Append Action'}
+        <button type="submit" className="primary-btn" style={{ padding: '10px 20px' }}>
+          {step < 3 ? 'Continue' : isEdit ? 'Save' : 'Add Task'}
         </button>
       </div>
     </form>
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   ManualGoalWizard — 3-step goal creation without AI
+═══════════════════════════════════════════════════════════════════ */
 function ManualGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onBack, onSubmit }) {
   const [step, setStep] = useState(1);
-  const [showConstraints, setShowConstraints] = useState(false);
-  const [priority, setPriority] = useState('High Priority');
-  const [deadline, setDeadline] = useState('');
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (step < 3) {
-      setStep((prev) => Math.min(prev + 1, 3));
-      return;
-    }
-    onSubmit(event);
-  };
-
   return (
-    <form className="modal-form" onSubmit={handleSubmit} style={{ display: 'grid', gap: '12px', width: 'min(100%, 760px)', margin: '0 auto' }}>
-      <FormStepHeader
-        step={step}
-        labels={['Objective', 'Constraints', 'Review']}
-        title="Create Goal Manually"
-        subtitle="Define target scope first, then add constraints only if needed."
-      />
-
+    <form onSubmit={e => { e.preventDefault(); step < 3 ? setStep(s => s + 1) : onSubmit(e); }}
+      style={{ display: 'grid', gap: '14px', width: 'min(100%, 600px)', margin: '0 auto' }}>
+      <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Create Goal</h3>
       {step === 1 && (
         <>
-          <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.92rem', fontWeight: 600 }}>
-            Goal name
-            <input type="text" placeholder="Enter target objective" value={goalName} onChange={(e) => setGoalName(e.target.value)} required />
-          </label>
-          <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.92rem', fontWeight: 600 }}>
-            Description and definition
-            <textarea rows="3" placeholder="What does success look like?" value={goalVision} onChange={(e) => setGoalVision(e.target.value)} />
-          </label>
+          <input type="text" placeholder="Goal name" value={goalName} onChange={e => setGoalName(e.target.value)} required autoFocus />
+          <textarea rows={3} placeholder="What does success look like?" value={goalVision} onChange={e => setGoalVision(e.target.value)} />
         </>
       )}
-
       {step === 2 && (
-        <FieldBox>
-          <button
-            type="button"
-            className="ghost-btn"
-            onClick={() => setShowConstraints((prev) => !prev)}
-            style={{ justifySelf: 'start', padding: '8px 12px', fontSize: '0.82rem' }}
-          >
-            {showConstraints ? 'Hide optional constraints' : 'Add optional constraints'}
-          </button>
-
-          {showConstraints && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', animation: 'elegantFadeIn 0.2s ease forwards' }}>
-              <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                Global deadline
-                <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-              </label>
-              <label style={{ display: 'grid', gap: '6px', color: 'var(--text)', fontSize: '0.88rem', fontWeight: 600 }}>
-                Prioritization
-                <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-                  <option>High Priority</option>
-                  <option>Medium Priority</option>
-                  <option>Low Priority</option>
-                </select>
-              </label>
-            </div>
-          )}
-        </FieldBox>
-      )}
-
-      {step === 3 && (
-        <FieldBox style={{ background: 'color-mix(in oklab, var(--panel) 90%, #3b82f6 10%)' }}>
-          <div style={{ display: 'grid', gap: '8px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '10px' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Goal</strong>
-              <span style={{ fontSize: '0.95rem', color: 'var(--text)', fontWeight: 600 }}>{goalName || 'Untitled goal'}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '10px' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Description</strong>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text)' }}>{goalVision || 'No description added'}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '10px' }}>
-              <strong style={{ fontSize: '0.84rem', color: 'var(--muted)' }}>Constraints</strong>
-              <span style={{ fontSize: '0.9rem', color: 'var(--text)' }}>
-                {showConstraints ? `${priority}${deadline ? ` • Deadline: ${deadline}` : ''}` : 'No constraints added'}
-              </span>
-            </div>
-          </div>
-        </FieldBox>
-      )}
-
-      <div className="modal-actions" style={{ marginTop: '8px', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
-          {step > 1 && (
-            <button type="button" className="ghost-btn" onClick={() => setStep((prev) => Math.max(prev - 1, 1))}>
-              Previous
-            </button>
-          )}
+        <div style={{ display: 'grid', gap: '10px' }}>
+          <input type="date" onChange={e => {}} placeholder="Deadline (optional)" />
         </div>
-        <button type="submit" className="primary-btn">{step < 3 ? 'Continue' : 'Save Goal'}</button>
+      )}
+      {step === 3 && (
+        <div style={{ padding: '14px', background: 'var(--bg-2)', borderRadius: '12px', border: '1px solid var(--line)', display: 'grid', gap: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+            <span style={{ color: 'var(--muted)' }}>Goal</span>
+            <span style={{ fontWeight: 600 }}>{goalName || 'Untitled'}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+            <span style={{ color: 'var(--muted)' }}>Vision</span>
+            <span style={{ fontWeight: 600, maxWidth: '60%', textAlign: 'right' }}>{goalVision || 'None'}</span>
+          </div>
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '4px' }}>
+        <button type="button" className="ghost-btn" onClick={onBack}>Back</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {step > 1 && <button type="button" className="ghost-btn" onClick={() => setStep(s => s - 1)}>Previous</button>}
+          <button type="submit" className="primary-btn" style={{ padding: '10px 20px' }}>
+            {step < 3 ? 'Continue' : 'Save Goal'}
+          </button>
+        </div>
       </div>
     </form>
   );
 }
 
-function TaskEditWrapper({ task, updateTask, goalId, onDone, weekDays }) {
-  const [form, setForm] = useState({ 
-    ...task, 
-    timeEstimate: task.timeEstimate || '30m', 
-    energy: task.energy || 'Medium' 
-  });
-  const onChange = (payload) => setForm(f => ({ ...f, ...payload }));
-  const toggleDay = (idx) => {
-    const nextDays = form.specificDays.includes(idx) ? form.specificDays.filter(d => d !== idx) : [...form.specificDays, idx];
-    onChange({ specificDays: nextDays.sort((a,b)=>a-b) });
-  };
-  const onSubmit = (e) => {
-    e.preventDefault();
-    updateTask(goalId, task.id, form);
-    onDone();
-  };
-  return <GoalTaskForm title="Edit Task metrics" subtitle="Adjust parameters and timelines." form={form} onChange={onChange} toggleSpecificDayHandler={toggleDay} onSubmit={onSubmit} onCancel={onDone} weekDays={weekDays} isEdit />;
-}
-
-function AssessmentModal({ goal, onComplete, onCancel, theme }) {
+/* ═══════════════════════════════════════════════════════════════════
+   AssessmentModal — shown when a goal hits 100%
+═══════════════════════════════════════════════════════════════════ */
+function AssessmentModal({ goal, onComplete, onCancel }) {
   const [reflection, setReflection] = useState('');
-  const [rating, setRating] = useState('Satisfactory (Target hit with expected results)');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onComplete({ reflection, rating, completedAt: getDateKey(new Date()) });
-  };
+  const [rating, setRating] = useState('Satisfactory');
 
   return (
-    <ModalOverlay onClose={onCancel} theme={theme}>
-      <form className="modal-form" onSubmit={handleSubmit} style={{ display: 'grid', gap: '16px', maxWidth: '440px', width: '100%', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}><Trophy size={48} color="#10b981" /></div>
-          <h3 style={{ margin: '0 0 8px', fontSize: '1.4rem' }}>Target Achieved</h3>
-          <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.95rem', lineHeight: 1.5 }}>You've reached 100% completion for "{goal.name}". Take a moment to document your execution performance.</p>
+    <ModalOverlay onClose={onCancel}>
+      <form onSubmit={e => { e.preventDefault(); onComplete({ reflection, rating, completedAt: getDateKey(new Date()) }); }}
+        style={{ display: 'grid', gap: '14px', maxWidth: '420px', width: '100%', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center' }}>
+          <Trophy size={40} color="#10b981" style={{ marginBottom: '12px' }} />
+          <h3 style={{ margin: '0 0 6px', fontSize: '1.25rem' }}>Goal Complete!</h3>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: 0 }}>
+            You crushed "{goal.name}". How did it go?
+          </p>
         </div>
-
-        <FieldBox>
-          <label style={{ display: 'grid', gap: '8px', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 600 }}>
-            Execution Rating
-            <select value={rating} onChange={(e) => setRating(e.target.value)}>
-              <option>Outstanding (Exceeded expectations & timelines)</option>
-              <option>Satisfactory (Target hit with expected results)</option>
-              <option>Challenging (Completed but required extensive effort/pivots)</option>
-            </select>
-          </label>
-        </FieldBox>
-
-        <label style={{ display: 'grid', gap: '8px', color: 'var(--text)', fontSize: '0.95rem', fontWeight: 600 }}>
-          Reflection & Key Learnings
-          <textarea rows="4" placeholder="What went well? What obstacles did you overcome? How can you apply this to future goals?" value={reflection} onChange={(e) => setReflection(e.target.value)} required />
-        </label>
-
-        <div className="modal-actions" style={{ marginTop: '8px' }}>
-          <button type="button" className="ghost-btn" onClick={onCancel} style={{ padding: '12px 24px' }}>Cancel</button>
-          <button type="submit" className="primary-btn" style={{ background: '#10b981', color: '#fff', border: 'none', padding: '12px 24px' }}>Lock Goal Assessment</button>
+        <select value={rating} onChange={e => setRating(e.target.value)}>
+          <option>Outstanding</option>
+          <option>Satisfactory</option>
+          <option>Challenging</option>
+        </select>
+        <textarea rows={3} placeholder="What did you learn?" value={reflection} onChange={e => setReflection(e.target.value)} required />
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button type="button" className="ghost-btn" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="primary-btn" style={{ background: '#10b981', border: 'none' }}>Save Assessment</button>
         </div>
       </form>
     </ModalOverlay>
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   TaskRow — single task in the list
+═══════════════════════════════════════════════════════════════════ */
+const ENERGY_COLORS = { High: '#ec4899', Medium: '#8b5cf6', Low: '#3b82f6' };
+const TIME_COLORS = { '15m': '#10b981', '30m': '#3b82f6', '1h': '#8b5cf6', '2h+': '#ec4899' };
+
+function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, dense }) {
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '12px', alignItems: 'center',
+      padding: dense ? '10px 14px' : '14px 18px',
+      background: isDoneToday ? 'var(--bg-2)' : 'transparent',
+      borderBottom: '1px solid var(--line)',
+      opacity: isDoneToday ? 0.6 : 1,
+      transition: 'background 0.15s ease, opacity 0.15s ease'
+    }}>
+      <input type="checkbox" checked={isDoneToday} onChange={() => onToggle(goalId, task.id)}
+        style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--accent)' }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{
+          fontSize: dense ? '0.88rem' : '0.95rem', fontWeight: 600,
+          textDecoration: isDoneToday ? 'line-through' : 'none',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+        }}>{task.title}</div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <RotateCw size={11} /> {task.recurrenceType === 'one-time' ? 'Once' : task.recurrenceType === 'daily' ? 'Daily' : task.recurrenceType === 'weekly' ? 'Weekly' : 'Custom'}
+          </span>
+          {task.timeEstimate && (
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: TIME_COLORS[task.timeEstimate] + '18', color: TIME_COLORS[task.timeEstimate] }}>
+              <Clock size={10} style={{ marginRight: '2px' }} />{task.timeEstimate}
+            </span>
+          )}
+          {task.energy && (
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: ENERGY_COLORS[task.energy] + '18', color: ENERGY_COLORS[task.energy] }}>
+              <Zap size={10} style={{ marginRight: '2px' }} />{task.energy}
+            </span>
+          )}
+          <span style={{
+            fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px',
+            background: isActiveToday ? 'rgba(16,185,129,0.1)' : 'var(--bg-2)',
+            color: isActiveToday ? '#10b981' : 'var(--muted)'
+          }}>{isActiveToday ? 'Today' : 'Later'}</span>
+          {task.deadline && (
+            <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
+              <CalendarIcon size={11} /> {task.deadline}
+            </span>
+          )}
+        </div>
+      </div>
+      <button className="ghost-btn" onClick={() => onEdit(task)} title="Edit"
+        style={{ padding: '6px', opacity: 0.5, flexShrink: 0 }}
+        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+        onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}>
+        <Edit2 size={14} />
+      </button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GoalsPage — main export
+═══════════════════════════════════════════════════════════════════ */
 function GoalsPage({
-  goals,
-  selectedGoal,
-  selectedGoalId,
-  setSelectedGoalId,
-  allTaskCount,
-  getTaskForm,
-  updateTaskForm,
-  addTaskToGoal,
-  toggleSpecificDay,
-  weekDays,
-  isTaskActiveOnDate,
-  isTaskDoneForDate,
-  toggleTaskDoneForToday,
-  getRecurrenceText,
-  prettyDate,
-  today,
-  isGoalModalOpen,
-  openGoalModal,
-  closeGoalModal,
-  goalName,
-  setGoalName,
-  goalVision,
-  setGoalVision,
-  addGoal,
-  updateTask,
-  completeGoal,
-  theme
+  goals, selectedGoal, selectedGoalId, setSelectedGoalId, allTaskCount,
+  getTaskForm, updateTaskForm, addTaskToGoal, toggleSpecificDay, weekDays,
+  isTaskActiveOnDate, isTaskDoneForDate, toggleTaskDoneForToday,
+  getRecurrenceText, prettyDate, today,
+  isGoalModalOpen, openGoalModal, closeGoalModal,
+  goalName, setGoalName, goalVision, setGoalVision,
+  addGoal, updateTask, completeGoal, theme, aiEnabled
 }) {
+  /* ── Local UI state ───────────────────────────────────────── */
+  const [activeTab, setActiveTab] = useState('tasks');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState(false);
   const [creationMode, setCreationMode] = useState(null);
   const [taskQuery, setTaskQuery] = useState('');
-  const [taskQueryDraft, setTaskQueryDraft] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
-  const [showGoalOverview, setShowGoalOverview] = useState(false);
-  const [denseMode, setDenseMode] = useState(true);
-  const [hoveredTaskId, setHoveredTaskId] = useState(null);
-  const [pressedTaskId, setPressedTaskId] = useState(null);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [addTaskHovered, setAddTaskHovered] = useState(false);
+  const [denseMode, setDenseMode] = useState(false);
+  const [sortBy, setSortBy] = useState('default');
 
-  useEffect(() => {
-    if (!isGoalModalOpen) {
-      setCreationMode(null);
-    }
-  }, [isGoalModalOpen]);
+  /* ── Reset creation mode when modal closes ───────────────── */
+  useEffect(() => { if (!isGoalModalOpen) setCreationMode(null); }, [isGoalModalOpen]);
 
+  /* ── Navigation ───────────────────────────────────────────── */
   const handleOpenGoal = (goalId) => {
     setSelectedGoalId(goalId);
-    setIsTaskModalOpen(false);
     setTaskQuery('');
-    setTaskQueryDraft('');
     setTaskFilter('all');
+    setActiveTab('tasks');
   };
+  const handleBackToGoals = () => setSelectedGoalId(null);
 
-  const handleBackToGoals = () => {
-    setSelectedGoalId(null);
-    setIsTaskModalOpen(false);
-    setEditingTask(null);
-    setTaskQuery('');
-    setTaskQueryDraft('');
-    setTaskFilter('all');
-  };
+  /* ── Filter & sort logic ──────────────────────────────────── */
+  const filteredTasks = useMemo(() => {
+    if (!selectedGoal) return [];
+    let tasks = [...selectedGoal.tasks];
 
-  const taskMatches = (task) => {
-    if (!selectedGoal) return false;
-    const activeToday = isTaskActiveOnDate(task, today);
-    const doneToday = isTaskDoneForDate(task, today);
+    // Apply search
+    if (taskQuery.trim()) {
+      const q = taskQuery.trim().toLowerCase();
+      tasks = tasks.filter(t => t.title.toLowerCase().includes(q));
+    }
 
-    if (taskFilter === 'today' && !activeToday) return false;
-    if (taskFilter === 'open' && doneToday) return false;
-    if (taskFilter === 'done' && !doneToday) return false;
+    // Apply status filter
+    if (taskFilter === 'today') {
+      tasks = tasks.filter(t => isTaskActiveOnDate(t, today));
+    } else if (taskFilter === 'open') {
+      tasks = tasks.filter(t => !isTaskDoneForDate(t, today));
+    } else if (taskFilter === 'done') {
+      tasks = tasks.filter(t => isTaskDoneForDate(t, today));
+    }
 
-    if (!taskQuery.trim()) return true;
-    const searchBlob = `${task.title} ${getRecurrenceText(task)} ${task.deadline || ''}`.toLowerCase();
-    return searchBlob.includes(taskQuery.trim().toLowerCase());
-  };
+    // Apply sort
+    if (sortBy === 'energy') {
+      const order = { High: 0, Medium: 1, Low: 2 };
+      tasks.sort((a, b) => (order[a.energy] ?? 1) - (order[b.energy] ?? 1));
+    } else if (sortBy === 'time') {
+      const order = { '15m': 0, '30m': 1, '1h': 2, '2h+': 3 };
+      tasks.sort((a, b) => (order[a.timeEstimate] ?? 1) - (order[b.timeEstimate] ?? 1));
+    } else if (sortBy === 'alpha') {
+      tasks.sort((a, b) => a.title.localeCompare(b.title));
+    }
 
-  const clearTaskControls = () => {
-    setTaskQuery('');
-    setTaskQueryDraft('');
-    setTaskFilter('all');
-  };
+    return tasks;
+  }, [selectedGoal, taskQuery, taskFilter, sortBy, today]);
 
-  const applyTaskSearch = () => {
-    setTaskQuery(taskQueryDraft.trim());
-  };
+  const pendingTasks = filteredTasks.filter(t => !isTaskDoneForDate(t, today));
+  const doneTasks = filteredTasks.filter(t => isTaskDoneForDate(t, today));
+  const activeCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskActiveOnDate(t, today)).length : 0;
+  const doneCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskDoneForDate(t, today)).length : 0;
 
-  const visibleTaskCount = selectedGoal ? selectedGoal.tasks.filter(taskMatches).length : 0;
-  const activeTaskCount = selectedGoal ? selectedGoal.tasks.filter((task) => isTaskActiveOnDate(task, today)).length : 0;
-  const doneTaskCount = selectedGoal ? selectedGoal.tasks.filter((task) => isTaskDoneForDate(task, today)).length : 0;
+  /* ═════════════════════════════════════════════════════════════
+     RENDER: Goals List (no goal selected)
+  ═════════════════════════════════════════════════════════════ */
+  if (!selectedGoal) {
+    return (
+      <section className="page page-enter" style={{ padding: '24px 32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+          <div>
+            <h1 style={{ marginBottom: '4px' }}>Goals</h1>
+            <p className="lead" style={{ margin: 0 }}>{goals.length} goals · {allTaskCount} tasks</p>
+          </div>
+        </div>
+
+        {goals.length === 0 ? (
+          <div className="card premium-surface" style={{
+            padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: '16px', border: '2px dashed var(--line)', textAlign: 'center'
+          }}>
+            <Target size={48} color="var(--muted)" />
+            <div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
+                No goals yet
+              </div>
+              <p style={{ color: 'var(--muted)', margin: 0, maxWidth: '360px' }}>
+                Create your first goal and let AI build a personalized roadmap, or define it manually.
+              </p>
+            </div>
+            <button className="primary-btn" onClick={openGoalModal} style={{ marginTop: '8px', padding: '12px 24px' }}>
+              <Plus size={18} style={{ marginRight: '6px' }} />Create Goal
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '14px' }}>
+            {goals.map(goal => {
+              const progress = getGoalProgress(goal);
+              const goalActive = goal.tasks.filter(t => isTaskActiveOnDate(t, today)).length;
+              const goalDone = goal.tasks.filter(t => isTaskDoneForDate(t, today)).length;
+              return (
+                <button key={goal.id} type="button" className="card premium-surface"
+                  onClick={() => handleOpenGoal(goal.id)}
+                  style={{
+                    padding: '20px', textAlign: 'left', cursor: 'pointer', border: '1px solid var(--line)',
+                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                    display: 'flex', flexDirection: 'column', gap: '12px'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 28px rgba(0,0,0,0.12)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = ''; }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text)' }}>{goal.name}</div>
+                    <span style={{ fontSize: '1.2rem', fontWeight: 800, color: progress === 100 ? '#10b981' : 'var(--accent)' }}>
+                      {progress}%
+                    </span>
+                  </div>
+                  {goal.vision && (
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {goal.vision}
+                    </p>
+                  )}
+                  <div style={{ display: 'flex', gap: '10px', fontSize: '0.78rem', color: 'var(--muted)' }}>
+                    <span>{goal.tasks.length} tasks</span>
+                    <span>{goalActive} active</span>
+                    <span>{goalDone} done</span>
+                  </div>
+                  <div style={{ height: '5px', background: 'var(--bg-2)', borderRadius: '99px', overflow: 'hidden' }}>
+                    <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent), var(--accent-2))', borderRadius: '99px', transition: 'width 0.3s ease' }} />
+                  </div>
+                  {goal.roadmap?.isAiGenerated && (
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Cpu size={10} /> AI Generated
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <button className="fab-goal" onClick={openGoalModal} aria-label="Add goal">+</button>
+
+        {isGoalModalOpen && (
+          <ModalOverlay onClose={closeGoalModal}>
+            {!creationMode ? (
+              <div style={{ display: 'grid', gap: '18px', padding: '8px 0', maxWidth: '420px', margin: '0 auto' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: '1.3rem' }}>New Goal</h3>
+                  <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>How would you like to create it?</p>
+                </div>
+                <button className="ghost-btn" onClick={() => setCreationMode('manual')}
+                  style={{ padding: '20px', border: '2px solid var(--line)', borderRadius: '14px', textAlign: 'left', display: 'grid', gap: '4px' }}>
+                  <strong style={{ fontSize: '1.05rem' }}>Create Manually</strong>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Define your goal and add tasks yourself.</span>
+                </button>
+                <button className="primary-btn" onClick={() => setCreationMode('ai')}
+                  style={{ padding: '20px', display: 'grid', gap: '4px', textAlign: 'left', borderRadius: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '1.05rem' }}>Plan with AI</strong>
+                    <Cpu size={24} style={{ opacity: 0.8 }} />
+                  </div>
+                  <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)' }}>AI asks clarifying questions and builds a detailed roadmap.</span>
+                </button>
+              </div>
+            ) : creationMode === 'manual' ? (
+              <ManualGoalWizard
+                goalName={goalName} setGoalName={setGoalName}
+                goalVision={goalVision} setGoalVision={setGoalVision}
+                onBack={() => setCreationMode(null)}
+                onSubmit={addGoal}
+              />
+            ) : (
+              <AiGoalWizard
+                goalName={goalName} setGoalName={setGoalName}
+                goalVision={goalVision} setGoalVision={setGoalVision}
+                onCancel={() => setCreationMode(null)}
+                onSaveWithTasks={(tasks, roadmapData) => addGoal(tasks, roadmapData)}
+                aiEnabled={aiEnabled}
+              />
+            )}
+          </ModalOverlay>
+        )}
+      </section>
+    );
+  }
+
+  /* ═════════════════════════════════════════════════════════════
+     RENDER: Goal Detail (goal is selected)
+  ═════════════════════════════════════════════════════════════ */
+  const progress = getGoalProgress(selectedGoal);
+  const isCompleted = selectedGoal.status === 'completed';
 
   return (
-    <section className="page page-enter goals-page">
-      {!selectedGoal && (
-        <div className="goals-head" style={{ marginBottom: '20px' }}>
-          <div>
-            <h1>Goals Workspace</h1>
-            <p className="lead" style={{ marginBottom: 0 }}>Start with your goals list. Open one to manage tasks.</p>
-          </div>
-          <div className="goals-summary card" style={{ padding: '10px 14px', minWidth: '116px', gap: '4px 10px' }}>
-            <strong>{goals.length}</strong>
-            <span>Goals</span>
-            <strong>{allTaskCount}</strong>
-            <span>Tasks</span>
-          </div>
+    <section className="page page-enter" style={{ padding: '24px 32px' }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px',
+        flexWrap: 'wrap', justifyContent: 'space-between'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button className="ghost-btn" onClick={handleBackToGoals} style={{ padding: '8px 12px' }}>← Back</button>
+          <h1 style={{ fontSize: '1.4rem', margin: 0, maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {selectedGoal.name}
+          </h1>
         </div>
-      )}
-
-      {!selectedGoal && (
-        <div className="goals-grid-list">
-          {goals.map((goal) => {
-            const progress = getGoalProgress(goal);
-            return (
-              <button
-                key={goal.id}
-                type="button"
-                className="goal-nav"
-                onClick={() => handleOpenGoal(goal.id)}
-              >
-                <div className="goal-nav-top">
-                  <strong>{goal.name}</strong>
-                  <span>{progress}%</span>
-                </div>
-                <small>{goal.vision}</small>
-                <small>{goal.tasks.length} tasks</small>
-                <div className="goal-progress">
-                  <div style={{ width: `${progress}%` }} />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {selectedGoal && (
-        <div className="goals-detail-shell" style={{ padding: 0, border: 'none', background: 'transparent', boxShadow: 'none' }}>
-          <div
+        <div style={{ display: 'flex', gap: '4px', background: 'var(--panel)', padding: '3px', borderRadius: '8px', border: '1px solid var(--line)' }}>
+          <button onClick={() => setActiveTab('overview')}
             style={{
-              position: 'sticky',
-              top: '-2px',
-              zIndex: 6,
-              display: 'grid',
-              gap: '8px',
-              padding: '12px',
-              border: '1px solid var(--line)',
-              borderRadius: '16px',
-              background: 'linear-gradient(180deg, var(--panel-strong) 0%, var(--panel) 100%)',
-              boxShadow: '0 8px 18px rgba(15, 23, 42, 0.08)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)'
-            }}
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: '8px', alignItems: 'center' }}>
-              <button type="button" className="ghost-btn back-goals-btn" onClick={handleBackToGoals} style={{ padding: '8px 10px' }}>
-                Back
-              </button>
-              <input
-                type="text"
-                value={taskQueryDraft}
-                onChange={(e) => setTaskQueryDraft(e.target.value)}
-                onFocus={() => setSearchFocused(true)}
-                onBlur={() => setSearchFocused(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    applyTaskSearch();
-                  }
-                }}
-                placeholder="Search tasks"
-                style={{ width: '100%', padding: '10px 14px', minHeight: '40px', fontSize: '0.88rem', borderRadius: '999px', background: 'var(--bg-2)', border: searchFocused ? '1px solid var(--accent)' : '1px solid var(--line)', boxShadow: searchFocused ? '0 0 0 3px color-mix(in oklab, var(--accent) 20%, transparent)' : 'none', transition: 'border-color 0.2s ease, box-shadow 0.2s ease' }}
-              />
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={applyTaskSearch}
-                style={{ padding: '8px 12px', fontSize: '0.78rem', background: 'var(--bg-2)', color: 'var(--muted)' }}
-              >
-                Search
-              </button>
-              <button
-                type="button"
-                className="primary-btn add-task-btn"
-                onClick={() => setIsTaskModalOpen(true)}
-                onMouseEnter={() => setAddTaskHovered(true)}
-                onMouseLeave={() => setAddTaskHovered(false)}
-                style={{ minWidth: '118px', minHeight: '40px', fontWeight: 700, boxShadow: addTaskHovered ? '0 14px 24px rgba(124, 58, 237, 0.42)' : '0 10px 22px rgba(124, 58, 237, 0.34)', transform: addTaskHovered ? 'translateY(-1px)' : 'translateY(0)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-              >
-                Add Task
-              </button>
-            </div>
+              padding: '7px 14px', fontSize: '0.84rem', fontWeight: 600, borderRadius: '6px',
+              border: 'none', cursor: 'pointer',
+              background: activeTab === 'overview' ? 'var(--bg-2)' : 'transparent',
+              color: activeTab === 'overview' ? 'var(--text)' : 'var(--muted)'
+            }}>Overview</button>
+          <button onClick={() => setActiveTab('tasks')}
+            style={{
+              padding: '7px 14px', fontSize: '0.84rem', fontWeight: 600, borderRadius: '6px',
+              border: 'none', cursor: 'pointer',
+              background: activeTab === 'tasks' ? 'var(--bg-2)' : 'transparent',
+              color: activeTab === 'tasks' ? 'var(--text)' : 'var(--muted)'
+            }}>Tasks</button>
+        </div>
+      </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap', borderTop: '1px solid var(--line)', paddingTop: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                {[
-                  ['all', `All (${selectedGoal.tasks.length})`],
-                  ['today', `Today (${activeTaskCount})`],
-                  ['open', `Open (${selectedGoal.tasks.length - doneTaskCount})`],
-                  ['done', `Done (${doneTaskCount})`]
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={taskFilter === value ? 'day-chip active' : 'day-chip'}
-                    onClick={() => setTaskFilter(value)}
-                    style={{ padding: '6px 9px', fontSize: '0.75rem' }}
-                  >
-                    {label}
-                  </button>
-                ))}
-                {(taskQuery || taskFilter !== 'all') && (
-                  <button
-                    type="button"
-                    className="ghost-btn"
-                    onClick={clearTaskControls}
-                    style={{ padding: '7px 10px', fontSize: '0.75rem' }}
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', opacity: 0.86 }}>
-                <span className="meta-chip" style={{ fontSize: '0.72rem', background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)' }}>Visible {visibleTaskCount}/{selectedGoal.tasks.length}</span>
-                <span className="meta-chip good" style={{ fontSize: '0.72rem', border: '1px solid rgba(16, 185, 129, 0.25)' }}>Active {activeTaskCount}</span>
-                <span className="meta-chip" style={{ fontSize: '0.72rem', background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)' }}>Done {doneTaskCount}</span>
-              </div>
-
-              <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => setShowGoalOverview((prev) => !prev)}
-                style={{ padding: '7px 10px', fontSize: '0.74rem', background: 'transparent', color: 'var(--muted)' }}
-              >
-                {showGoalOverview ? 'Hide overview' : 'Show overview'}
-              </button>
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => setDenseMode((prev) => !prev)}
-                style={{ padding: '7px 10px', fontSize: '0.74rem', background: 'transparent', color: 'var(--muted)' }}
-              >
-                {denseMode ? 'Comfort' : 'Dense'}
-              </button>
+      {/* Completion banner */}
+      {progress === 100 && !isCompleted && (
+        <div style={{
+          padding: '18px 22px', background: 'rgba(16, 185, 129, 0.08)',
+          border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '14px',
+          marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Trophy size={22} color="#10b981" />
+            <div>
+              <div style={{ fontWeight: 700, color: '#10b981' }}>100% Complete</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>All tasks executed. Lock in your assessment.</div>
             </div>
           </div>
-          </div>
-
-          {showGoalOverview && (
-            <div className="goal-head" style={{ marginBottom: '8px', paddingBottom: '8px', animation: 'elegantFadeIn 0.2s ease forwards' }}>
-              <h2 style={{ fontSize: '1.36rem', marginBottom: '4px', letterSpacing: '-0.01em', lineHeight: 1.15 }}>{selectedGoal.name}</h2>
-              <p style={{ fontSize: '0.87rem', color: 'var(--muted)', marginBottom: '8px', lineHeight: 1.35 }}>{selectedGoal.vision}</p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '10px' }}>
-                <div className="meta-chip" style={{ padding: '8px 10px', justifyContent: 'center' }}>Tasks {selectedGoal.tasks.length}</div>
-                <div className="meta-chip good" style={{ padding: '8px 10px', justifyContent: 'center' }}>Done {selectedGoal.tasks.filter((t) => isTaskDoneForDate(t, today)).length}</div>
-                <div className="meta-chip" style={{ padding: '8px 10px', justifyContent: 'center' }}>Active {selectedGoal.tasks.filter((t) => isTaskActiveOnDate(t, today)).length}</div>
-              </div>
-
-              <div style={{ padding: '10px 12px', background: 'var(--bg-2)', borderRadius: '10px', border: '1px solid var(--line)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.82rem', fontWeight: 600 }}>
-                  <span style={{ color: 'var(--text)' }}>Execution Progress</span>
-                  <span style={{ color: 'var(--accent)' }}>{getGoalProgress(selectedGoal)}%</span>
-                </div>
-                <div style={{ height: '6px', background: 'var(--panel)', borderRadius: '99px', overflow: 'hidden', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)' }}>
-                  <div style={{ width: `${getGoalProgress(selectedGoal)}%`, background: 'linear-gradient(90deg, var(--accent), var(--accent-2))', height: '100%', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {(() => {
-            const progress = getGoalProgress(selectedGoal);
-            const isCompleted = selectedGoal.status === 'completed';
-            
-            const oneTime = selectedGoal.tasks.filter(t => t.recurrenceType === 'one-time');
-            const daily = selectedGoal.tasks.filter(t => t.recurrenceType === 'daily');
-            const weekly = selectedGoal.tasks.filter(t => t.recurrenceType === 'weekly' || t.recurrenceType === 'specific-days');
-
-            const useUnifiedFinishedSection = taskFilter === 'all' || taskFilter === 'today' || taskFilter === 'done';
-            const allFilteredTasks = selectedGoal.tasks.filter(taskMatches);
-            const unifiedFinishedTasks = allFilteredTasks.filter((task) => isTaskDoneForDate(task, today));
-
-            const renderTaskRows = (taskRows, keyPrefix = 'row') => (
-              <ul className="task-list goals-task-list" style={{ gap: '0', alignContent: 'start' }}>
-                {taskRows.map((task, idx) => {
-                  const activeToday = isTaskActiveOnDate(task, today);
-                  const doneToday = isTaskDoneForDate(task, today);
-                  const rowKey = `${keyPrefix}-${task.id}-${task.recurrenceType || 'na'}-${task.deadline || 'na'}-${idx}`;
-                  return (
-                    <li
-                      key={rowKey}
-                      className={doneToday ? 'task-row goals-task-row done' : 'task-row goals-task-row'}
-                      onMouseEnter={() => setHoveredTaskId(rowKey)}
-                      onMouseLeave={() => {
-                        setHoveredTaskId(null);
-                        setPressedTaskId(null);
-                      }}
-                      onMouseDown={() => setPressedTaskId(rowKey)}
-                      onMouseUp={() => setPressedTaskId(null)}
-                      style={{
-                        border: 'none',
-                        borderBottom: idx === taskRows.length - 1 ? 'none' : '1px solid var(--line)',
-                        borderRadius: '0',
-                        padding: denseMode ? '8px 10px' : '11px 12px',
-                        background: doneToday ? 'var(--bg-2)' : (idx % 2 === 0 ? 'var(--panel)' : 'var(--panel-strong)'),
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1fr) auto',
-                        alignItems: 'start',
-                        gap: '10px',
-                        animation: 'none',
-                        opacity: 1,
-                        width: '100%',
-                        transform: pressedTaskId === rowKey ? 'scale(0.998)' : hoveredTaskId === rowKey ? 'translateY(-1px)' : 'translateY(0)',
-                        boxShadow: hoveredTaskId === rowKey ? '0 8px 18px rgba(15, 23, 42, 0.09)' : 'none',
-                        borderLeft: hoveredTaskId === rowKey || activeToday ? '2px solid color-mix(in oklab, var(--accent) 55%, transparent)' : '2px solid transparent',
-                        transition: 'transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-left-color 0.18s ease'
-                      }}
-                    >
-                      <div>
-                        <label style={{ fontSize: denseMode ? '0.9rem' : '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={doneToday}
-                            onChange={() => toggleTaskDoneForToday(selectedGoal.id, task.id)}
-                            style={{ width: denseMode ? '20px' : '22px', height: denseMode ? '20px' : '22px', marginRight: '8px' }}
-                          />
-                          <span style={{ fontWeight: 600 }}>{task.title}</span>
-                        </label>
-                        <div className="task-meta" style={{ marginTop: denseMode ? '4px' : '6px', paddingLeft: '28px', gap: '8px', justifyContent: 'flex-start' }}>
-                          <small style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem', opacity: 0.9 }}>
-                            <RotateCw size={14} /> {getRecurrenceText(task)}
-                          </small>
-                          {task.timeEstimate && <span className="meta-chip" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)', opacity: 0.86 }}>⏱ {task.timeEstimate}</span>}
-                          {task.energy && <span className="meta-chip" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--muted)', opacity: 0.86 }}>⚡ {task.energy}</span>}
-                          <span className={activeToday ? 'meta-chip good' : 'meta-chip'}>
-                            {activeToday ? 'Active today' : 'Not today'}
-                          </span>
-                          {task.deadline && (
-                            <span className="meta-chip highlight">
-                              <CalendarIcon size={12} /> {prettyDate(task.deadline)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <button className="ghost-btn" style={{ padding: denseMode ? '5px' : '6px', minHeight: denseMode ? '28px' : '30px', minWidth: denseMode ? '28px' : '30px' }} onClick={() => setEditingTask(task)} title="Edit Task metrics">
-                        <Edit2 size={14} color="var(--muted)" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            );
-
-            const renderList = (tasks, emptyObj) => {
-              const filteredTasks = tasks.filter(taskMatches);
-              const primaryTasks = useUnifiedFinishedSection
-                ? filteredTasks.filter((task) => !isTaskDoneForDate(task, today))
-                : filteredTasks;
-
-              if (filteredTasks.length === 0 && !emptyObj) return null;
-
-              if (primaryTasks.length === 0 && filteredTasks.length > 0) return null;
-
-              return (
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  <div style={{ padding: '0', overflow: 'visible', borderRadius: '12px', border: '1px solid var(--line)', marginBottom: '0', background: 'var(--panel-strong)', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.06)' }}>
-                    {primaryTasks.length === 0 && emptyObj && (
-                      <li className="empty-row" style={{ padding: '40px 20px', flexDirection: 'column', gap: '16px', background: 'transparent' }}>
-                        <CheckCircle2 color="var(--muted)" size={48} />
-                        <div style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text)' }}>{taskQuery ? 'No task matched your search/filter.' : emptyObj.title}</div>
-                        <p style={{ margin: 0 }}>{taskQuery ? 'Try clearing search or switching filters.' : emptyObj.desc}</p>
-                      </li>
-                    )}
-                    {primaryTasks.length > 0 && renderTaskRows(primaryTasks, 'primary')}
-                  </div>
-                </div>
-              );
-            };
-
-            return (
-              <div style={{ display: 'grid', gap: '10px', paddingRight: '0', overflow: 'visible' }}>
-                {progress === 100 && !isCompleted && (
-                  <div style={{ animation: 'elegantFadeIn 0.4s ease forwards', padding: '24px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '16px', marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '24px', justifyContent: 'space-between' }}>
-                    <div>
-                      <h4 style={{ margin: '0 0 4px', fontSize: '1.2rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Trophy size={20} /> Goal Fully Executed!
-                      </h4>
-                      <p style={{ margin: 0, color: 'var(--text)', fontSize: '0.95rem', opacity: 0.9 }}>You've hit 100% execution on this pipeline. It's time to reflect and close it out.</p>
-                    </div>
-                    <button className="primary-btn" onClick={() => setIsAssessmentModalOpen(true)} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '12px 24px', flexShrink: 0 }}>
-                      Complete Goal
-                    </button>
-                  </div>
-                )}
-
-                {isCompleted && selectedGoal.assessment && (
-                  <div style={{ animation: 'elegantFadeIn 0.4s ease forwards', padding: '24px', background: 'var(--bg-2)', border: '1px solid var(--line)', borderRadius: '16px', marginBottom: '32px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                      <Trophy size={20} color="#10b981" />
-                      <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text)' }}>Completed Goal Assessment</h4>
-                      <span className="meta-chip good" style={{ marginLeft: 'auto', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>{selectedGoal.assessment.rating}</span>
-                    </div>
-                    <p style={{ fontSize: '0.95rem', color: 'var(--muted)', lineHeight: 1.6, fontStyle: 'italic', margin: 0 }}>"{selectedGoal.assessment.reflection}"</p>
-                  </div>
-                )}
-
-                {taskFilter !== 'done' && (
-                  <>
-                    <div className="section-head compact" style={{ marginTop: '8px', marginBottom: '8px' }}>
-                      <h3 style={{ fontSize: '1.18rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Milestones & One-Time Actions</h3>
-                    </div>
-                    {renderList(oneTime, { title: 'No milestones mapped.', desc: 'Create one-time actionable steps for this goal.' })}
-
-                    {(daily.length > 0 || weekly.length > 0) && (
-                      <div className="section-head compact" style={{ marginTop: '24px', marginBottom: '10px', paddingTop: '14px', borderTop: '1px solid var(--line)' }}>
-                        <h3 style={{ fontSize: '1.18rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Recurring Execution Flow</h3>
-                      </div>
-                    )}
-                    {renderList(daily)}
-                    {renderList(weekly)}
-                  </>
-                )}
-
-                {useUnifiedFinishedSection && unifiedFinishedTasks.length > 0 && (
-                  <div style={{ display: 'grid', gap: '8px', marginTop: taskFilter === 'done' ? '6px' : '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '2px' }}>
-                      <CheckCircle2 size={14} color="var(--muted)" />
-                      <span style={{ fontSize: '0.82rem', fontWeight: 700, letterSpacing: '0.01em', color: 'var(--muted)', textTransform: 'uppercase' }}>
-                        Finished Tasks ({unifiedFinishedTasks.length})
-                      </span>
-                    </div>
-                    <div style={{ padding: '0', overflow: 'visible', borderRadius: '12px', border: '1px dashed var(--line)', background: 'var(--bg-2)' }}>
-                      {renderTaskRows(unifiedFinishedTasks, 'finished')}
-                    </div>
-                  </div>
-                )}
-
-                {taskFilter === 'done' && unifiedFinishedTasks.length === 0 && (
-                  <div style={{ padding: '0', overflow: 'visible', borderRadius: '12px', border: '1px solid var(--line)', background: 'var(--panel-strong)', boxShadow: '0 4px 10px rgba(15, 23, 42, 0.06)' }}>
-                    <li className="empty-row" style={{ padding: '40px 20px', flexDirection: 'column', gap: '16px', background: 'transparent' }}>
-                      <CheckCircle2 color="var(--muted)" size={48} />
-                      <div style={{ fontSize: '1rem', fontWeight: '500', color: 'var(--text)' }}>No finished tasks yet.</div>
-                      <p style={{ margin: 0 }}>Completed tasks from all schedules will appear here.</p>
-                    </li>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <button className="primary-btn" onClick={() => setIsAssessmentModalOpen(true)}
+            style={{ background: '#10b981', border: 'none', padding: '10px 18px', fontSize: '0.88rem', flexShrink: 0 }}>
+            Complete Goal
+          </button>
         </div>
       )}
 
-      {!selectedGoal && (
-        <button type="button" className="fab-goal" onClick={openGoalModal} aria-label="Add goal">
-          +
-        </button>
+      {isCompleted && selectedGoal.assessment && (
+        <div style={{
+          padding: '18px 22px', background: 'var(--bg-2)', border: '1px solid var(--line)',
+          borderRadius: '14px', marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <Trophy size={20} color="#10b981" />
+            <span style={{ fontWeight: 700 }}>Completed</span>
+            <span style={{ fontSize: '0.8rem', color: '#10b981', marginLeft: 'auto', fontWeight: 600 }}>
+              {selectedGoal.assessment.rating}
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--muted)', fontStyle: 'italic' }}>
+            "{selectedGoal.assessment.reflection}"
+          </p>
+        </div>
       )}
 
-      {isGoalModalOpen && (
-        <ModalOverlay onClose={closeGoalModal} theme={theme}>
-          {!creationMode && (
-            <div style={{ display: 'grid', gap: '20px', padding: '10px 0' }}>
-              <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                <h3 style={{ margin: '0 0 8px', fontSize: '1.4rem' }}>Initialize New Target</h3>
-                <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.95rem' }}>Are you defining this manually or would you like AI to construct your execution roadmap?</p>
-              </div>
-              <button 
-                className="ghost-btn" 
-                style={{ padding: '24px', border: '2px solid var(--line)', display: 'grid', gap: '6px', textAlign: 'left', borderRadius: '16px' }} 
-                onClick={() => setCreationMode('manual')}
-              >
-                <strong style={{ fontSize: '1.1rem', color: 'var(--text)' }}>Create Manually</strong>
-                <span style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Input your goal, description, strict deadlines, and manually map out your actions.</span>
-              </button>
-              <button 
-                className="primary-btn" 
-                style={{ padding: '24px', display: 'grid', gap: '6px', textAlign: 'left', borderRadius: '16px', gridTemplateColumns: '1fr auto', boxAlign: 'center', alignItems: 'center' }} 
-                onClick={() => setCreationMode('ai')}
-              >
+      {/* ── OVERVIEW TAB ─────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <div style={{ display: 'grid', gap: '18px', animation: 'elegantFadeIn 0.2s ease forwards' }}>
+          {/* Vision */}
+          <div className="card premium-surface" style={{ padding: '18px 22px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: '8px' }}>
+              Vision
+            </div>
+            <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text)', lineHeight: 1.5 }}>
+              {selectedGoal.vision || 'No description provided.'}
+            </p>
+          </div>
+
+          {/* Progress */}
+          <div className="card premium-surface" style={{ padding: '18px 22px' }}>
+            <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', marginBottom: '10px' }}>
+              Progress
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontWeight: 600 }}>{progress}%</span>
+              <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+                {doneCount} of {selectedGoal.tasks.length} tasks done
+              </span>
+            </div>
+            <div style={{ height: '6px', background: 'var(--bg-2)', borderRadius: '99px', overflow: 'hidden' }}>
+              <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent), var(--accent-2))', borderRadius: '99px', transition: 'width 0.4s ease' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '14px', marginTop: '12px', fontSize: '0.82rem', color: 'var(--muted)' }}>
+              <span><Flame size={13} style={{ marginRight: '3px' }} />{activeCount} active today</span>
+              <span><CheckCircle2 size={13} style={{ marginRight: '3px' }} />{doneCount} done</span>
+              <span><Clock size={13} style={{ marginRight: '3px' }} />{selectedGoal.focusMinutes || 0} focus min</span>
+            </div>
+          </div>
+
+          {/* AI Roadmap summary */}
+          {selectedGoal.roadmap?.summary && (
+            <div style={{
+              borderRadius: '14px', overflow: 'hidden',
+              border: `1px solid ${selectedGoal.roadmap.summary.moodColor}40`,
+              background: `linear-gradient(135deg, ${selectedGoal.roadmap.summary.moodColor}10 0%, var(--panel) 70%)`,
+            }}>
+              <div style={{ padding: '16px 22px', borderBottom: `1px solid ${selectedGoal.roadmap.summary.moodColor}20`, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <BookOpen size={18} color={selectedGoal.roadmap.summary.moodColor} />
                 <div>
-                  <strong style={{ fontSize: '1.1rem', display: 'block' }}>Plan with AI Workspace</strong>
-                  <span style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', display: 'block' }}>Complete a quick parameterization and let the AI generate a tactical checklist.</span>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: selectedGoal.roadmap.summary.moodColor }}>
+                    {selectedGoal.roadmap.isAiGenerated ? 'AI Analysis' : 'Roadmap'}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text)' }}>
+                    {selectedGoal.roadmap.summary.headline}
+                  </div>
                 </div>
-                <Cpu size={32} style={{ opacity: 0.8 }} />
-              </button>
+              </div>
+              <div style={{ padding: '16px 22px', display: 'grid', gap: '10px' }}>
+                <p style={{ margin: 0, fontSize: '0.88rem', color: 'var(--text)', lineHeight: 1.6 }}>
+                  {selectedGoal.roadmap.summary.description}
+                </p>
+                {selectedGoal.roadmap.summary.keyResults?.length > 0 && (
+                  <div style={{ display: 'grid', gap: '4px' }}>
+                    {selectedGoal.roadmap.summary.keyResults.map((kr, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.84rem', color: 'var(--text)' }}>
+                        <Star size={12} color={selectedGoal.roadmap.summary.moodColor} style={{ marginTop: '2px', flexShrink: 0 }} />
+                        {kr}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {creationMode === 'manual' && (
-            <ManualGoalWizard
-              goalName={goalName}
-              setGoalName={setGoalName}
-              goalVision={goalVision}
-              setGoalVision={setGoalVision}
-              onBack={() => setCreationMode(null)}
-              onSubmit={addGoal}
-            />
-          )}
-
-          {creationMode === 'ai' && (
-            <AiGoalWizard 
-              goalName={goalName}
-              setGoalName={setGoalName}
-              goalVision={goalVision}
-              setGoalVision={setGoalVision}
-              onCancel={() => setCreationMode(null)}
-              onSaveWithTasks={(tasks) => addGoal(tasks)}
-            />
-          )}
-
-        </ModalOverlay>
+          {/* Stats grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px' }}>
+            {[
+              { label: 'Total Tasks', value: selectedGoal.tasks.length, color: '#8b5cf6' },
+              { label: 'Active Today', value: activeCount, color: '#10b981' },
+              { label: 'Completed', value: doneCount, color: '#3b82f6' },
+              { label: 'Focus Minutes', value: selectedGoal.focusMinutes || 0, color: '#ec4899' },
+            ].map(stat => (
+              <div key={stat.label} className="card" style={{ padding: '14px 16px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: stat.color }}>{stat.value}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {isTaskModalOpen && selectedGoal && (
-        <ModalOverlay onClose={() => setIsTaskModalOpen(false)} theme={theme}>
+      {/* ── TASKS TAB ────────────────────────────────────── */}
+      {activeTab === 'tasks' && (
+        <div style={{ display: 'grid', gap: '14px', animation: 'elegantFadeIn 0.2s ease forwards' }}>
+          {/* Toolbar */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Search */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '200px',
+              padding: '8px 14px', background: 'var(--panel)', borderRadius: '10px', border: '1px solid var(--line)' }}>
+              <Search size={15} color="var(--muted)" />
+              <input type="text" value={taskQuery} onChange={e => setTaskQuery(e.target.value)}
+                placeholder="Search tasks..." style={{
+                  flex: 1, border: 'none', background: 'transparent', outline: 'none',
+                  fontSize: '0.9rem', color: 'var(--text)', padding: 0
+                }} />
+              {taskQuery && (
+                <button onClick={() => setTaskQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  <X size={14} color="var(--muted)" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter chips */}
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {['all', 'today', 'open', 'done'].map(f => (
+                <button key={f} onClick={() => setTaskFilter(f)}
+                  style={{
+                    padding: '7px 12px', fontSize: '0.78rem', fontWeight: 600, borderRadius: '8px',
+                    border: '1px solid var(--line)', cursor: 'pointer',
+                    background: taskFilter === f ? 'var(--accent)' : 'var(--panel)',
+                    color: taskFilter === f ? '#fff' : 'var(--muted)'
+                  }}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
+              ))}
+            </div>
+
+            {/* Sort */}
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
+              style={{ padding: '7px 10px', fontSize: '0.78rem', borderRadius: '8px', border: '1px solid var(--line)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer' }}>
+              <option value="default">Default</option>
+              <option value="energy">By energy</option>
+              <option value="time">By duration</option>
+              <option value="alpha">A–Z</option>
+            </select>
+
+            {/* Dense toggle */}
+            <button onClick={() => setDenseMode(d => !d)} className="ghost-btn"
+              style={{ padding: '7px 10px', fontSize: '0.78rem' }}>
+              {denseMode ? 'Comfort' : 'Compact'}
+            </button>
+
+            {/* Add task */}
+            <button className="primary-btn" onClick={() => setIsTaskModalOpen(true)}
+              style={{ padding: '8px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+              <Plus size={16} style={{ marginRight: '4px' }} />Add Task
+            </button>
+          </div>
+
+          {/* Count indicator */}
+          <div style={{ display: 'flex', gap: '10px', fontSize: '0.78rem', color: 'var(--muted)', fontWeight: 600 }}>
+            <span>{filteredTasks.length} tasks</span>
+            <span style={{ color: '#10b981' }}>{doneTasks.length} done</span>
+            <span>{pendingTasks.length} pending</span>
+          </div>
+
+          {/* Task list */}
+          {filteredTasks.length === 0 ? (
+            <div className="card premium-surface" style={{
+              padding: '48px 24px', display: 'flex', flexDirection: 'column',
+              alignItems: 'center', gap: '12px', border: '2px dashed var(--line)'
+            }}>
+              <CheckCircle2 size={40} color="var(--muted)" />
+              <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
+                {taskQuery ? 'No matching tasks' : taskFilter === 'done' ? 'No completed tasks yet' : 'No tasks'}
+              </div>
+              <p style={{ color: 'var(--muted)', margin: 0, textAlign: 'center', fontSize: '0.88rem' }}>
+                {taskQuery ? 'Try a different search term.' : taskFilter === 'done' ? 'Complete some tasks to see them here.' : 'Add your first task to get started.'}
+              </p>
+              {!taskQuery && taskFilter !== 'done' && (
+                <button className="primary-btn" onClick={() => setIsTaskModalOpen(true)} style={{ marginTop: '4px' }}>
+                  <Plus size={16} style={{ marginRight: '4px' }} />Add Task
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--line)' }}>
+              {/* Pending section */}
+              {pendingTasks.length > 0 && (
+                <div>
+                  <div style={{
+                    padding: '10px 18px', fontSize: '0.72rem', fontWeight: 800,
+                    textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)',
+                    borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: '8px'
+                  }}>
+                    <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--accent)' }} />
+                    Pending ({pendingTasks.length})
+                  </div>
+                  {pendingTasks.map((task, idx) => (
+                    <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                      isActiveToday={isTaskActiveOnDate(task, today)}
+                      isDoneToday={false}
+                      onToggle={toggleTaskDoneForToday}
+                      onEdit={setEditingTask}
+                      dense={denseMode} />
+                  ))}
+                </div>
+              )}
+
+              {/* Done section */}
+              {doneTasks.length > 0 && (
+                <div>
+                  <div style={{
+                    padding: '10px 18px', fontSize: '0.72rem', fontWeight: 800,
+                    textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)',
+                    borderBottom: '1px solid var(--line)', borderTop: pendingTasks.length > 0 ? '1px solid var(--line)' : 'none',
+                    display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.7
+                  }}>
+                    <CheckCircle2 size={12} /> Done ({doneTasks.length})
+                  </div>
+                  {doneTasks.map((task, idx) => (
+                    <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                      isActiveToday={isTaskActiveOnDate(task, today)}
+                      isDoneToday={true}
+                      onToggle={toggleTaskDoneForToday}
+                      onEdit={setEditingTask}
+                      dense={denseMode} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── MODALS ─────────────────────────────────────────── */}
+      {isTaskModalOpen && (
+        <ModalOverlay onClose={() => setIsTaskModalOpen(false)}>
           <GoalTaskForm
-            title="Append New Task"
-            subtitle="Compose one-time or recurring actions for this goal."
-            goalId={selectedGoal.id}
+            title="New Task"
             form={getTaskForm(selectedGoal.id)}
-            onChange={(payload) => updateTaskForm(selectedGoal.id, payload)}
-            onSubmit={(e) => { addTaskToGoal(selectedGoal.id, e); setIsTaskModalOpen(false); }}
-            toggleSpecificDayHandler={(idx) => toggleSpecificDay(selectedGoal.id, idx)}
+            onChange={payload => updateTaskForm(selectedGoal.id, payload)}
+            onSubmit={e => { addTaskToGoal(selectedGoal.id, e); setIsTaskModalOpen(false); }}
+            toggleSpecificDayHandler={idx => toggleSpecificDay(selectedGoal.id, idx)}
             weekDays={weekDays}
             onCancel={() => setIsTaskModalOpen(false)}
             isEdit={false}
@@ -949,27 +800,31 @@ function GoalsPage({
         </ModalOverlay>
       )}
 
-      {editingTask && selectedGoal && (
-        <ModalOverlay onClose={() => setEditingTask(null)} theme={theme}>
-          <TaskEditWrapper
-            task={editingTask}
-            updateTask={updateTask}
-            goalId={selectedGoal.id}
+      {editingTask && (
+        <ModalOverlay onClose={() => setEditingTask(null)}>
+          <GoalTaskForm
+            title="Edit Task"
+            form={{ ...editingTask, timeEstimate: editingTask.timeEstimate || '30m', energy: editingTask.energy || 'Medium' }}
+            onChange={payload => setEditingTask(prev => ({ ...prev, ...payload }))}
+            onSubmit={e => { e.preventDefault(); updateTask(selectedGoal.id, editingTask.id, editingTask); setEditingTask(null); }}
+            toggleSpecificDayHandler={idx => {
+              const next = editingTask.specificDays?.includes(idx)
+                ? editingTask.specificDays.filter(d => d !== idx)
+                : [...(editingTask.specificDays || []), idx];
+              setEditingTask(prev => ({ ...prev, specificDays: next.sort((a, b) => a - b) }));
+            }}
             weekDays={weekDays}
-            onDone={() => setEditingTask(null)}
+            onCancel={() => setEditingTask(null)}
+            isEdit
           />
         </ModalOverlay>
       )}
 
-      {isAssessmentModalOpen && selectedGoal && (
+      {isAssessmentModalOpen && (
         <AssessmentModal
           goal={selectedGoal}
-          theme={theme}
           onCancel={() => setIsAssessmentModalOpen(false)}
-          onComplete={(payload) => {
-            completeGoal(selectedGoal.id, payload);
-            setIsAssessmentModalOpen(false);
-          }}
+          onComplete={payload => { completeGoal(selectedGoal.id, payload); setIsAssessmentModalOpen(false); }}
         />
       )}
     </section>

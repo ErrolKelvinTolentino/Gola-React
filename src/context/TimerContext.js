@@ -11,6 +11,7 @@ export function TimerProvider({ children }) {
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState('work'); // 'work', 'shortBreak', 'longBreak'
   const [activeTask, setActiveTask] = useState(null);
+  const [sessionCompleted, setSessionCompleted] = useState(null);
 
   const playAlarm = () => {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -40,12 +41,21 @@ export function TimerProvider({ children }) {
 
   const skipTimer = () => {
     setIsActive(false);
+    
+    const totalTime = mode === 'work' ? workDur * 60 : mode === 'shortBreak' ? shortDur * 60 : longDur * 60;
+    const elapsedMinutes = Math.round((totalTime - timeLeft) / 60);
+    const completedMode = mode;
+
     if (mode === 'work') {
       setMode('shortBreak');
       setTimeLeft(Math.max(1, shortDur) * 60);
     } else {
       setMode('work');
       setTimeLeft(Math.max(1, workDur) * 60);
+    }
+
+    if (completedMode === 'work') {
+      setSessionCompleted({ mode: completedMode, duration: elapsedMinutes > 0 ? elapsedMinutes : 1 });
     }
   };
 
@@ -59,12 +69,19 @@ export function TimerProvider({ children }) {
       setIsActive(false);
       playAlarm();
       
+      const completedMode = mode;
+      const completedDur = mode === 'work' ? workDur : mode === 'shortBreak' ? shortDur : longDur;
+      
       if (mode === 'work') {
         setMode('shortBreak');
         setTimeLeft(Math.max(1, shortDur) * 60);
       } else {
         setMode('work');
         setTimeLeft(Math.max(1, workDur) * 60);
+      }
+
+      if (completedMode === 'work') {
+        setSessionCompleted({ mode: completedMode, duration: completedDur });
       }
     }
     return () => clearInterval(interval);
@@ -80,11 +97,14 @@ export function TimerProvider({ children }) {
     if (newMode === 'longBreak') setTimeLeft(Math.max(1, longDur) * 60);
   };
 
+  const clearSessionCompleted = () => setSessionCompleted(null);
+
   return (
     <TimerContext.Provider value={{
       timeLeft, setTimeLeft, isActive, toggleTimer, mode, setCustomMode, skipTimer,
       activeTask, setActiveTask, 
-      workDur, setWorkDur, shortDur, setShortDur, longDur, setLongDur
+      workDur, setWorkDur, shortDur, setShortDur, longDur, setLongDur,
+      sessionCompleted, clearSessionCompleted
     }}>
       {children}
     </TimerContext.Provider>

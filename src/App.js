@@ -1,17 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import HomePage from './pages/HomePage';
 import TasksPage from './pages/TasksPage';
 import GoalsPage from './pages/GoalsPage';
-import CalendarPage from './pages/CalendarPage';
-import SettingsPage from './pages/SettingsPage';
 import FocusPage from './pages/FocusPage';
+import ReviewPage from './pages/ReviewPage';
+import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProfilePage from './pages/ProfilePage';
 import GlobalTimerWidget from './components/GlobalTimerWidget';
+import { useTimer } from './context/TimerContext';
 import GlobalStyles from './styles/GlobalStyles';
 import { AppShell, AuroraLayer, MainPanel, FocusWrap } from './styles/AppLayout';
 import { DEFAULT_SETTINGS, DEFAULT_TASK_FORM, INITIAL_GOALS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
@@ -23,10 +24,25 @@ import {
   isTaskDoneForDate,
   prettyDate
 } from './utils/dateUtils';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth, db } from './firebase/config';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-const USER_STORAGE_KEY = 'gola.mock.user';
-const ACCOUNT_STORAGE_KEY = 'gola.mock.account';
-const THEME_STORAGE_KEY = 'gola.mock.theme';
+const THEME_STORAGE_KEY = 'gola.theme';
+const LEGACY_THEME_STORAGE_KEY = 'gola.mock.theme';
+const STORAGE_SUFFIXES = {
+  goals: 'goals',
+  focusSessions: 'focusSessions',
+  streak: 'streak',
+  aiEnabled: 'aiEnabled'
+};
+
+const LEGACY_SHARED_STATE_KEYS = ['gola.goals', 'gola.focusSessions', 'gola.streak', 'gola.aiEnabled'];
+
+const getUserScopedStorageKey = (uid, suffix) => {
+  if (!uid) return null;
+  return `gola.${uid}.${suffix}`;
+};
 
 const parseStoredJson = (key) => {
   const raw = localStorage.getItem(key);
@@ -38,25 +54,217 @@ const parseStoredJson = (key) => {
   }
 };
 
-const getNameFromEmail = (email) => {
-  const local = (email || 'user').split('@')[0] || 'user';
-  return local
-    .split(/[._-]/g)
-    .filter(Boolean)
-    .map((part) => part[0].toUpperCase() + part.slice(1))
-    .join(' ');
-};
+/* ── Streak milestone check ────────────────────────────────────────── */
+const STREAK_MILESTONES = [3, 7, 14, 30, 60, 90, 100];
+function checkStreakMilestone(streak) {
+  if (STREAK_MILESTONES.includes(streak)) {
+    return streak;
+  }
+  return null;
+}
 
 function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   const navigate = useNavigate();
-  const [activePage, setActivePage] = useState('Home');
-  const [goals, setGoals] = useState(INITIAL_GOALS);
+  const { setActiveTask } = useTimer();
+  const hasHydratedCloud = useRef(false);
+  const userStorageKey = useCallback(
+    (suffix) => getUserScopedStorageKey(user?.uid, suffix),
+    [user?.uid]
+  );
+  const [activePage, setActivePage] = useState('Today');
+  
+  // ── Goals state (persisted) ──────────────────────────────────────
+  const [goals, setGoals] = useState(() => {
+    const stored = parseStoredJson(getUserScopedStorageKey(user?.uid, STORAGE_SUFFIXES.goals));
+    if (Array.isArray(stored)) return stored;
+    return INITIAL_GOALS;
+  });
+  
   const [selectedGoalId, setSelectedGoalId] = useState(null);
   const [goalName, setGoalName] = useState('');
   const [goalVision, setGoalVision] = useState('');
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [taskFormsByGoal, setTaskFormsByGoal] = useState({});
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+
+  // ── New state: Focus sessions, streak, AI toggle ─────────────────
+  const [focusSessions, setFocusSessions] = useState(() => {
+    return parseStoredJson(getUserScopedStorageKey(user?.uid, STORAGE_SUFFIXES.focusSessions)) || [];
+  });
+  
+  const [streak, setStreak] = useState(() => {
+    const stored = parseStoredJson(getUserScopedStorageKey(user?.uid, STORAGE_SUFFIXES.streak));
+    return stored?.streak || 0;
+  });
+  
+  const [lastActiveDate, setLastActiveDate] = useState(() => {
+    const stored = parseStoredJson(getUserScopedStorageKey(user?.uid, STORAGE_SUFFIXES.streak));
+    return stored?.lastActiveDate || null;
+  });
+
+  const [aiEnabled, setAiEnabled] = useState(() => {
+    const stored = localStorage.getItem(getUserScopedStorageKey(user?.uid, STORAGE_SUFFIXES.aiEnabled));
+    return stored !== null ? stored === 'true' : true;
+  });
+
+  // ── Streak milestone toast ───────────────────────────────────────
+  const [streakToast, setStreakToast] = useState(null);
+
+  // ── Hydrate dashboard state from Firestore ───────────────────────
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const hydrateFromCloud = async () => {
+      if (!user?.uid) {
+        hasHydratedCloud.current = true;
+        return;
+      }
+
+      try {
+        const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
+        const snapshot = await getDoc(appStateRef);
+
+        if (!isSubscribed) return;
+
+        if (snapshot.exists()) {
+          const cloud = snapshot.data();
+
+          if (Array.isArray(cloud.goals)) {
+            setGoals(cloud.goals);
+          }
+
+          if (Array.isArray(cloud.focusSessions)) {
+            setFocusSessions(cloud.focusSessions);
+          }
+
+          if (typeof cloud.streak === 'number') {
+            setStreak(cloud.streak);
+          }
+
+          if (typeof cloud.lastActiveDate === 'string' || cloud.lastActiveDate === null) {
+            setLastActiveDate(cloud.lastActiveDate ?? null);
+          }
+
+          if (typeof cloud.aiEnabled === 'boolean') {
+            setAiEnabled(cloud.aiEnabled);
+          }
+
+          if (cloud.theme === 'light' || cloud.theme === 'dark') {
+            setTheme(cloud.theme);
+          }
+
+          if (cloud.settings && typeof cloud.settings === 'object') {
+            setSettings((current) => ({ ...current, ...cloud.settings }));
+          }
+        } else {
+          setGoals([]);
+          setFocusSessions([]);
+          setStreak(0);
+          setLastActiveDate(null);
+          setAiEnabled(true);
+          setSettings(DEFAULT_SETTINGS);
+
+          await setDoc(
+            appStateRef,
+            {
+              goals: [],
+              focusSessions: [],
+              streak: 0,
+              lastActiveDate: null,
+              aiEnabled: true,
+              theme,
+              settings: DEFAULT_SETTINGS,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            },
+            { merge: true }
+          );
+        }
+      } catch (error) {
+        console.warn('Failed to hydrate Firestore data:', error);
+      } finally {
+        if (isSubscribed) {
+          hasHydratedCloud.current = true;
+        }
+      }
+    };
+
+    hydrateFromCloud();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [user?.uid, user?.email, user?.name, theme, setTheme]);
+
+  // ── Persist goals ────────────────────────────────────────────────
+  useEffect(() => {
+    const key = userStorageKey(STORAGE_SUFFIXES.goals);
+    if (!key) return;
+    localStorage.setItem(key, JSON.stringify(goals));
+  }, [goals, userStorageKey]);
+
+  // ── Persist focus sessions ───────────────────────────────────────
+  useEffect(() => {
+    const key = userStorageKey(STORAGE_SUFFIXES.focusSessions);
+    if (!key) return;
+    localStorage.setItem(key, JSON.stringify(focusSessions));
+  }, [focusSessions, userStorageKey]);
+
+  // ── Persist streak ───────────────────────────────────────────────
+  useEffect(() => {
+    const key = userStorageKey(STORAGE_SUFFIXES.streak);
+    if (!key) return;
+    localStorage.setItem(key, JSON.stringify({ streak, lastActiveDate }));
+  }, [streak, lastActiveDate, userStorageKey]);
+
+  // ── Persist AI toggle ────────────────────────────────────────────
+  useEffect(() => {
+    const key = userStorageKey(STORAGE_SUFFIXES.aiEnabled);
+    if (!key) return;
+    localStorage.setItem(key, String(aiEnabled));
+  }, [aiEnabled, userStorageKey]);
+
+  // ── Cleanup legacy shared cache keys ─────────────────────────────
+  useEffect(() => {
+    LEGACY_SHARED_STATE_KEYS.forEach((key) => localStorage.removeItem(key));
+  }, []);
+
+  // ── Persist dashboard state to Firestore ─────────────────────────
+  useEffect(() => {
+    if (!user?.uid || !hasHydratedCloud.current) return;
+
+    const timeout = setTimeout(() => {
+      const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
+
+      setDoc(
+        appStateRef,
+        {
+          goals,
+          focusSessions,
+          streak,
+          lastActiveDate,
+          aiEnabled,
+          theme,
+          settings,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch((error) => {
+        console.warn('Failed to sync Firestore data:', error);
+      });
+    }, 700);
+
+    return () => clearTimeout(timeout);
+  }, [
+    aiEnabled,
+    focusSessions,
+    goals,
+    lastActiveDate,
+    settings,
+    streak,
+    theme,
+    user?.uid
+  ]);
 
   const today = new Date();
   const todayKey = getDateKey(today);
@@ -83,6 +291,11 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   const calendarCells = buildCalendarCells(goals, today);
 
   const monthName = today.toLocaleString('en-US', { month: 'long' });
+
+  // ── Focus minutes for today ──────────────────────────────────────
+  const focusMinutesToday = focusSessions
+    .filter(s => s.date === todayKey)
+    .reduce((sum, s) => sum + (s.duration || 0), 0);
 
   const getTaskForm = (goalId) => {
     const form = taskFormsByGoal[goalId];
@@ -116,7 +329,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     setGoalVision('');
   };
 
-  const addGoal = (eventOrTasks) => {
+  const addGoal = (eventOrTasks, roadmapData) => {
     let generatedTasks = [];
     if (eventOrTasks && typeof eventOrTasks.preventDefault === 'function') {
       eventOrTasks.preventDefault();
@@ -130,7 +343,10 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       id: Date.now(),
       name: goalName.trim(),
       vision: goalVision.trim() || 'A clear target worth showing up for.',
-      tasks: generatedTasks
+      tasks: generatedTasks,
+      roadmap: roadmapData || null,
+      focusMinutes: 0,
+      weeklyReflections: []
     };
 
     setGoals((currentGoals) => [newGoal, ...currentGoals]);
@@ -175,6 +391,40 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     }));
   };
 
+  // ── Streak update logic ──────────────────────────────────────────
+  const updateStreak = useCallback(() => {
+    const todayStr = todayKey;
+    
+    if (lastActiveDate === todayStr) {
+      // Already counted today
+      return;
+    }
+    
+    // Check if last active was yesterday
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = getDateKey(yesterday);
+    
+    let newStreak;
+    if (lastActiveDate === yesterdayStr) {
+      newStreak = streak + 1;
+    } else if (lastActiveDate === todayStr) {
+      newStreak = streak;
+    } else {
+      newStreak = 1;
+    }
+    
+    setStreak(newStreak);
+    setLastActiveDate(todayStr);
+    
+    // Check for milestone
+    const milestone = checkStreakMilestone(newStreak);
+    if (milestone) {
+      setStreakToast(milestone);
+      setTimeout(() => setStreakToast(null), 4000);
+    }
+  }, [todayKey, lastActiveDate, streak, today]);
+
   const toggleTaskDoneForToday = (goalId, taskId) => {
     const dateKey = todayKey;
 
@@ -201,6 +451,9 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         };
       })
     );
+
+    // Update streak when marking a task as done
+    updateStreak();
   };
 
   const toggleSetting = (key) => {
@@ -224,18 +477,82 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     }));
   };
 
+  // ── Focus session logging ────────────────────────────────────────
+  const logFocusSession = useCallback((sessionData) => {
+    const { goalId, taskId, duration } = sessionData;
+    
+    // Add to sessions log
+    setFocusSessions(prev => [...prev, {
+      date: todayKey,
+      goalId,
+      taskId,
+      duration // in minutes
+    }]);
+
+    // Increment focus minutes on the goal
+    if (goalId) {
+      setGoals(current => current.map(g => {
+        if (g.id !== goalId) return g;
+        return { ...g, focusMinutes: (g.focusMinutes || 0) + duration };
+      }));
+    }
+  }, [todayKey]);
+
+  // ── Weekly review adjustment ─────────────────────────────────────
+  const adjustGoal = useCallback((goalId, adjustmentType, assessment) => {
+    setGoals(current => current.map(g => {
+      if (g.id !== goalId) return g;
+      const reflections = g.weeklyReflections || [];
+      return {
+        ...g,
+        weeklyReflections: [...reflections, {
+          date: todayKey,
+          assessment: assessment || '',
+          adjustment: adjustmentType
+        }]
+      };
+    }));
+  }, [todayKey]);
+
+  // ── Data export ──────────────────────────────────────────────────
+  const exportData = useCallback(() => {
+    const data = {
+      goals,
+      focusSessions,
+      streak,
+      lastActiveDate,
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gola-export-${todayKey}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [goals, focusSessions, streak, lastActiveDate, todayKey]);
+
   const recurrenceText = (task) => getRecurrenceText(task, WEEK_DAYS);
 
   const renderActivePage = () => {
-    if (activePage === 'Tasks') {
+    if (activePage === 'Today') {
       return (
         <TasksPage
+          goals={goals}
           activeTasksToday={activeTasksToday}
           today={today}
+          isTaskActiveOnDate={isTaskActiveOnDate}
           isTaskDoneForDate={isTaskDoneForDate}
           toggleTaskDoneForToday={toggleTaskDoneForToday}
           getRecurrenceText={recurrenceText}
           prettyDate={prettyDate}
+          streak={streak}
+          completionRate={completionRate}
+          aiEnabled={aiEnabled}
+          focusMinutesToday={focusMinutesToday}
+          onStartFocus={(taskId, goalId) => {
+            setActivePage('Focus');
+          }}
         />
       );
     }
@@ -270,17 +587,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           theme={theme}
           updateTask={updateTask}
           completeGoal={completeGoal}
-        />
-      );
-    }
-
-    if (activePage === 'Calendar') {
-      return (
-        <CalendarPage
-          goals={goals}
-          weekDays={WEEK_DAYS}
-          todayKey={todayKey}
-          compactCalendar={settings.compactCalendar}
+          aiEnabled={aiEnabled}
         />
       );
     }
@@ -291,6 +598,22 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           activeTasksToday={activeTasksToday} 
           toggleTaskDoneForToday={toggleTaskDoneForToday}
           setActivePage={setActivePage}
+          logFocusSession={logFocusSession}
+          focusMinutesToday={focusMinutesToday}
+        />
+      );
+    }
+
+    if (activePage === 'Review') {
+      return (
+        <ReviewPage
+          goals={goals}
+          focusSessions={focusSessions}
+          onAdjustGoal={adjustGoal}
+          today={today}
+          aiEnabled={aiEnabled}
+          isTaskActiveOnDate={isTaskActiveOnDate}
+          isTaskDoneForDate={isTaskDoneForDate}
         />
       );
     }
@@ -300,24 +623,39 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         <SettingsPage
           theme={theme}
           setTheme={setTheme}
-          settings={settings}
-          toggleSetting={toggleSetting}
+          aiEnabled={aiEnabled}
+          setAiEnabled={setAiEnabled}
+          exportData={exportData}
+          onOpenProfile={() => navigate('/profile')}
         />
       );
     }
 
+    // Default: Today
     return (
-      <HomePage
-        goalsCount={goals.length}
-        allTaskCount={allTaskCount}
-        activeTasksCount={activeTasksToday.length}
-        completionRate={completionRate}
-        completedToday={completedToday}
-        selectedGoal={selectedGoal}
+      <TasksPage
+        goals={goals}
+        activeTasksToday={activeTasksToday}
         today={today}
+        isTaskActiveOnDate={isTaskActiveOnDate}
+        isTaskDoneForDate={isTaskDoneForDate}
+        toggleTaskDoneForToday={toggleTaskDoneForToday}
+        getRecurrenceText={recurrenceText}
+        prettyDate={prettyDate}
+        streak={streak}
+        completionRate={completionRate}
+        aiEnabled={aiEnabled}
+        focusMinutesToday={focusMinutesToday}
+        onStartFocus={(taskId, goalId) => {
+          setActiveTask(taskId);
+          setActivePage('Focus');
+        }}
       />
     );
   };
+
+  // Compute the page label for TopBar
+  const pageLabel = activePage === 'Today' ? 'Today' : activePage;
 
   return (
     <AppShell $themeMode={theme}>
@@ -325,13 +663,17 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       <AuroraLayer $variant="aurora-b" />
       <AuroraLayer $variant="aurora-c" />
 
-      <Sidebar navItems={NAV_ITEMS.filter((item) => item !== 'Settings')} activePage={activePage} onChangePage={setActivePage} />
+      <Sidebar 
+        navItems={NAV_ITEMS} 
+        activePage={activePage} 
+        onChangePage={setActivePage} 
+      />
       <GlobalTimerWidget activePage={activePage} setActivePage={setActivePage} />
 
       <MainPanel $focusMode={activePage === 'Focus'}>
         <TopBar
           date={today}
-          activePage={activePage}
+          activePage={pageLabel}
           user={user}
           onOpenProfile={() => navigate('/profile')}
           onOpenSettings={() => setActivePage('Settings')}
@@ -343,96 +685,78 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           </FocusWrap>
         ) : renderActivePage()}
       </MainPanel>
+
+      {/* Streak milestone toast */}
+      {streakToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '32px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1000,
+          background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+          color: '#fff',
+          padding: '14px 28px',
+          borderRadius: '999px',
+          fontSize: '1rem',
+          fontWeight: 700,
+          boxShadow: '0 12px 40px rgba(245, 158, 11, 0.4)',
+          animation: 'floatUpFade 0.4s ease forwards',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          🔥 {streakToast} day streak!
+        </div>
+      )}
     </AppShell>
   );
 }
 
 function App() {
-  const [user, setUser] = useState(() => parseStoredJson(USER_STORAGE_KEY));
-  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || 'light');
+  const [user, setUser] = useState(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [theme, setTheme] = useState(() => {
+    const primary = localStorage.getItem(THEME_STORAGE_KEY);
+    if (primary) return primary;
+
+    const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+    if (legacy) {
+      localStorage.setItem(THEME_STORAGE_KEY, legacy);
+      return legacy;
+    }
+
+    return 'light';
+  });
 
   useEffect(() => {
-    if (!user) {
-      localStorage.removeItem(USER_STORAGE_KEY);
-      return;
-    }
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
-  }, [user]);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        // We will load custom Firestore data here later in Phase 4
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: firebaseUser.displayName || firebaseUser.email.split('@')[0]
+        });
+      } else {
+        setUser(null);
+      }
+      setLoadingAuth(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
-  const handleLogin = ({ email, password }) => {
-    const account = parseStoredJson(ACCOUNT_STORAGE_KEY);
-    const normalizedEmail = email.trim().toLowerCase();
-
-    // No backend: validate against locally stored mock account or a demo credential pair.
-    if (account?.email) {
-      const accountEmail = account.email.toLowerCase();
-      if (normalizedEmail !== accountEmail || password !== account.password) {
-        return { ok: false, message: 'Wrong email or password.' };
-      }
-    } else {
-      const demoEmail = 'demo@gola.app';
-      const demoPassword = 'demo1234';
-      if (normalizedEmail !== demoEmail || password !== demoPassword) {
-        return { ok: false, message: 'Wrong email or password. Use demo@gola.app / demo1234 or register first.' };
-      }
-    }
-
-    const nextUser = {
-      name:
-        account && account.email?.toLowerCase() === normalizedEmail
-          ? account.name
-          : getNameFromEmail(email),
-      email: email.trim()
-    };
-
-    setUser(nextUser);
-    return { ok: true };
+  const handleLogout = async () => {
+    await signOut(auth);
   };
 
-  const handleRegister = ({ name, email, password }) => {
-    const account = {
-      name,
-      email,
-      password,
-      createdAt: Date.now()
-    };
-
-    localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(account));
-    setUser({ name, email });
-  };
-
-  const handleSaveProfile = ({ name, email, password }) => {
-    const safeName = name?.trim() || getNameFromEmail(email || user?.email);
-    const safeEmail = email?.trim() || user?.email || '';
-
-    const nextUser = {
-      ...user,
-      name: safeName,
-      email: safeEmail
-    };
-
-    setUser(nextUser);
-
-    const account = parseStoredJson(ACCOUNT_STORAGE_KEY) || {};
-    localStorage.setItem(
-      ACCOUNT_STORAGE_KEY,
-      JSON.stringify({
-        ...account,
-        name: safeName,
-        email: safeEmail,
-        password: password || account.password || '',
-        updatedAt: Date.now()
-      })
-    );
-  };
-
-  const handleLogout = () => {
-    setUser(null);
-  };
+  if (loadingAuth) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: 'var(--bg)' }}><div className="spinner"></div></div>;
+  }
 
   return (
     <BrowserRouter>
@@ -440,11 +764,11 @@ function App() {
       <Routes>
         <Route
           path="/login"
-          element={user ? <Navigate to="/app" replace /> : <LoginPage onLogin={handleLogin} theme={theme} />}
+          element={user ? <Navigate to="/app" replace /> : <LoginPage theme={theme} />}
         />
         <Route
           path="/register"
-          element={user ? <Navigate to="/app" replace /> : <RegisterPage onRegister={handleRegister} theme={theme} />}
+          element={user ? <Navigate to="/app" replace /> : <RegisterPage theme={theme} />}
         />
         <Route
           path="/app"
@@ -454,7 +778,7 @@ function App() {
           path="/profile"
           element={
             user ? (
-              <ProfilePage user={user} theme={theme} onSaveProfile={handleSaveProfile} onLogout={handleLogout} />
+              <ProfilePage user={user} theme={theme} onLogout={handleLogout} />
             ) : (
               <Navigate to="/login" replace />
             )

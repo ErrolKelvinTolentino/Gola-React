@@ -170,40 +170,13 @@ function ProfilePage({ user, theme = 'light', onSaveProfile, onLogout }) {
 
           <div style={{ display: 'grid', gap: '16px' }}>
             <div style={cardStyle}>
-              <h3 style={{ margin: 0, fontSize: '1.02rem', color: pageText }}>Preferences</h3>
-              <button
-                type="button"
-                className={soundFx ? 'toggle on' : 'toggle'}
-                onClick={() => setSoundFx((value) => !value)}
-                style={{ justifySelf: 'end' }}
-                aria-label="Toggle sound effects"
-              >
-                <span />
-              </button>
-              <p style={{ margin: 0, color: mutedText, fontSize: '0.9rem' }}>Enable subtle sound effects</p>
-
-              <button
-                type="button"
-                className={focusMode ? 'toggle on' : 'toggle'}
-                onClick={() => setFocusMode((value) => !value)}
-                style={{ justifySelf: 'end' }}
-                aria-label="Toggle focus mode defaults"
-              >
-                <span />
-              </button>
-              <p style={{ margin: 0, color: mutedText, fontSize: '0.9rem' }}>Prioritize focus mode experiences</p>
-            </div>
-
-            <div style={cardStyle}>
-              <h3 style={{ margin: 0, fontSize: '1.02rem', color: pageText }}>Activity Summary</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
-                {[['42', 'Tasks Completed'], ['7', 'Active Goals'], ['86%', 'Focus Score']].map(([value, label]) => (
-                  <div key={label} style={{ borderRadius: '14px', border: cardBorder, padding: '12px', background: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.72)' }}>
-                    <strong style={{ display: 'block', color: pageText, fontSize: '1.08rem' }}>{value}</strong>
-                    <span style={{ fontSize: '0.78rem', color: mutedText }}>{label}</span>
-                  </div>
-                ))}
-              </div>
+              <h3 style={{ margin: 0, fontSize: '1.02rem', color: pageText }}>App Info</h3>
+              <p style={{ margin: 0, color: mutedText, fontSize: '0.9rem' }}>
+                Gola — AI Goal Management
+              </p>
+              <p style={{ margin: 0, color: mutedText, fontSize: '0.82rem' }}>
+                Version 2.0 • Powered by Gemini AI
+              </p>
             </div>
           </div>
         </div>

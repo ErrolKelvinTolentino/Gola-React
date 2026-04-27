@@ -1,70 +1,85 @@
 import React, { useState } from 'react';
-import { Home, Target, CheckSquare, Calendar, Settings, Timer, ChevronLeft } from 'lucide-react';
+import { Target, CheckSquare, Timer, BarChart3, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import golaLogo from '../../assets/gola-logo.png';
 
 const ICON_MAP = {
-  Home: <Home size={22} />,
+  Today: <CheckSquare size={22} />,
   Goals: <Target size={22} />,
-  Tasks: <CheckSquare size={22} />,
   Focus: <Timer size={22} />,
-  Calendar: <Calendar size={22} />,
+  Review: <BarChart3 size={22} />,
   Settings: <Settings size={22} />
 };
 
 function Sidebar({ navItems, activePage, onChangePage }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const handleToggleSidebar = () => setIsCollapsed((prev) => !prev);
-
-  // Mobile-only: whether the nav drawer is visible
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
-  const handleToggleMobileNav = () => setIsMobileNavOpen((prev) => !prev);
 
-  // Close mobile nav after selecting a page
   const handleNavClick = (item) => {
     onChangePage(item);
     setIsMobileNavOpen(false);
   };
 
+  // Separate Settings to pin at bottom
+  const mainNavItems = navItems.filter(item => item !== 'Settings');
+  const hasSettings = navItems.includes('Settings');
+
   return (
-    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+    <aside 
+      className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}
+      style={{
+        width: isCollapsed ? '72px' : '240px',
+        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        overflow: 'hidden'
+      }}
+    >
       {/* ── Brand row ─────────────────────────────────────────── */}
-      <div className="brand" style={{ marginBottom: '4px' }}>
+      <div 
+        className="brand" 
+        style={{ 
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: isCollapsed ? 'center' : 'space-between',
+          padding: isCollapsed ? '16px 8px' : '16px 16px'
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <img
             src={golaLogo}
             alt="Gola logo"
             className="brand-logo"
+            style={{ width: '32px', height: '32px', flexShrink: 0 }}
           />
-          <strong className="brand-name">GOLA</strong>
+          {!isCollapsed && <strong className="brand-name">GOLA</strong>}
         </div>
 
-        {/* Desktop collapse chevron */}
+        {/* Desktop collapse button — only visible on desktop */}
         <button
           type="button"
           className="ghost-btn sidebar-collapse-btn"
-          onClick={handleToggleSidebar}
-          style={{ padding: '6px', borderRadius: '8px' }}
+          onClick={() => setIsCollapsed(prev => !prev)}
+          style={{ 
+            padding: '6px', 
+            borderRadius: '8px',
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
           title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
-          aria-expanded={!isCollapsed}
-          aria-label="Toggle Sidebar"
+          aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
         >
-          <ChevronLeft
-            size={20}
-            style={{
-              transform: isCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-          />
+          {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
 
         {/* Mobile hamburger — hidden on desktop via CSS */}
         <button
           type="button"
           className="ghost-btn mobile-nav-toggle"
-          onClick={handleToggleMobileNav}
+          onClick={() => setIsMobileNavOpen(prev => !prev)}
           aria-expanded={isMobileNavOpen}
           aria-label={isMobileNavOpen ? 'Close navigation' : 'Open navigation'}
-          style={{ padding: '7px 10px', borderRadius: '10px' }}
+          style={{ padding: '7px 10px', borderRadius: '10px', display: 'none' }}
         >
           <span className={`hamburger-icon ${isMobileNavOpen ? 'open' : ''}`}>
             <span />
@@ -74,23 +89,73 @@ function Sidebar({ navItems, activePage, onChangePage }) {
         </button>
       </div>
 
-      {/* ── Nav drawer — always visible on desktop, toggleable on mobile ── */}
-      <div className={`mobile-nav-drawer ${isMobileNavOpen ? 'mobile-nav-open' : ''}`}>
-        <nav>
-          {navItems.map((item) => (
+      {/* ── Nav drawer ────────────────────────────────────────── */}
+      <div 
+        className={`mobile-nav-drawer ${isMobileNavOpen ? 'mobile-nav-open' : ''}`}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: 'calc(100% - 80px)'
+        }}
+      >
+        <nav style={{ flex: 1 }}>
+          {mainNavItems.map((item) => (
             <button
               key={item}
               type="button"
               className={activePage === item ? 'nav-item active' : 'nav-item'}
               onClick={() => handleNavClick(item)}
-              data-tooltip={item}
+              title={isCollapsed ? item : undefined}
               aria-current={activePage === item ? 'page' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                width: '100%',
+                padding: isCollapsed ? '12px 0' : '12px 16px',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
+                borderRadius: '10px',
+                marginBottom: '2px'
+              }}
             >
-              <div className="nav-icon">{ICON_MAP[item]}</div>
-              <span className="nav-label">{item}</span>
+              <div className="nav-icon" style={{ flexShrink: 0 }}>
+                {ICON_MAP[item] || <Target size={22} />}
+              </div>
+              {!isCollapsed && <span className="nav-label">{item}</span>}
             </button>
           ))}
         </nav>
+
+        {/* Settings pinned to bottom */}
+        {hasSettings && (
+          <div style={{ 
+            paddingTop: '12px', 
+            borderTop: '1px solid var(--line)',
+            marginTop: 'auto'
+          }}>
+            <button
+              type="button"
+              className={activePage === 'Settings' ? 'nav-item active' : 'nav-item'}
+              onClick={() => handleNavClick('Settings')}
+              title={isCollapsed ? 'Settings' : undefined}
+              aria-current={activePage === 'Settings' ? 'page' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                width: '100%',
+                padding: isCollapsed ? '12px 0' : '12px 16px',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
+                borderRadius: '10px'
+              }}
+            >
+              <div className="nav-icon" style={{ flexShrink: 0 }}>
+                <Settings size={22} />
+              </div>
+              {!isCollapsed && <span className="nav-label">Settings</span>}
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

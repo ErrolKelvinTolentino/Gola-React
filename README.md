@@ -1,4 +1,31 @@
-# Getting Started with Create React App
+# Gola v1 (React)
+
+## Firebase Setup
+
+This app uses Firebase Authentication and Firestore for user auth and cloud data sync.
+
+1. Create a Firebase project in the Firebase Console.
+2. Enable Authentication with Email/Password provider.
+3. Create a Firestore database.
+4. Copy `.env.example` to `.env` and fill all `REACT_APP_FIREBASE_*` values.
+5. Run `npm install` and `npm start`.
+
+## Suggested Firestore Security Rules
+
+Use these starter rules so each signed-in user can read/write only their own document:
+
+```txt
+rules_version = '2';
+service cloud.firestore {
+	match /databases/{database}/documents {
+		match /users/{userId} {
+			allow read, write: if request.auth != null && request.auth.uid == userId;
+		}
+	}
+}
+```
+
+## Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 

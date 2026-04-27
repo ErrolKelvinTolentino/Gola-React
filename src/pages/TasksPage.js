@@ -10,6 +10,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { addDays, getDateKey, isTaskActiveOnDate as isTaskActiveOnDateUtil } from '../utils/dateUtils';
+import MorningBriefing from '../components/MorningBriefing';
+import QuotesBanner from '../components/QuotesBanner';
 
 /* ─── Mini SVG ring for day-cell progress ─────────────────────── */
 function RingProgress({ pct = 0, size = 32, stroke = 3, isEmpty = false }) {
@@ -84,6 +86,11 @@ function TasksPage({
   toggleTaskDoneForToday,
   getRecurrenceText,
   prettyDate,
+  streak,
+  completionRate,
+  aiEnabled,
+  focusMinutesToday,
+  onStartFocus
 }) {
   const todayKey = getDateKey(today);
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
@@ -231,9 +238,9 @@ function TasksPage({
         }}
       >
         <div>
-          <h1>Execution Terminal</h1>
+          <h1 style={{ fontSize: '2.4rem', letterSpacing: '-0.03em', marginBottom: '4px' }}>Welcome back.</h1>
           <p className="lead" style={{ margin: 0 }}>
-            Mission control for scheduled actions and completion flow.
+            Today is {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}. Here's your execution cockpit.
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -262,6 +269,14 @@ function TasksPage({
           </span>
         </div>
       </div>
+
+      <MorningBriefing
+        todayTasks={activeTasksToday || []}
+        goals={goals || []}
+        completionRate={completionRate}
+        streak={streak || 0}
+        aiEnabled={aiEnabled}
+      />
 
       {/* ── Horizontal Calendar Card ────────────────────────────── */}
       <div
@@ -644,23 +659,32 @@ function TasksPage({
                         background: 'transparent',
                       }}
                     >
-                      <label
-                        style={{
-                          fontSize: '1rem',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={false}
-                          onChange={() => handleToggleTaskDone(goalId, task.id)}
-                          style={{ width: '22px', height: '22px', marginRight: '6px' }}
-                        />
-                        <span style={{ fontWeight: 600 }}>{task.title}</span>
-                      </label>
-                      <div className="task-meta" style={{ marginTop: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                        <label
+                          style={{
+                            fontSize: '1rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={false}
+                            onChange={() => handleToggleTaskDone(goalId, task.id)}
+                            style={{ width: '22px', height: '22px', marginRight: '8px', marginTop: '2px' }}
+                          />
+                          <span style={{ fontWeight: 600, lineHeight: 1.4 }}>{task.title}</span>
+                        </label>
+                        <button 
+                          className="primary-btn" 
+                          onClick={() => onStartFocus(task.id, goalId)}
+                          style={{ padding: '6px 12px', fontSize: '0.75rem', minHeight: '0', borderRadius: '8px', flexShrink: 0, fontWeight: 700 }}
+                        >
+                          Focus <Zap size={12} style={{ marginLeft: '4px' }} />
+                        </button>
+                      </div>
+                      <div className="task-meta" style={{ marginTop: '8px', paddingLeft: '30px' }}>
                         <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           <Target size={13} /> {goalName}
                         </small>
@@ -771,6 +795,9 @@ function TasksPage({
           )}
         </div>
       )}
+      <div style={{ marginTop: '32px' }}>
+        <QuotesBanner />
+      </div>
     </section>
   );
 }

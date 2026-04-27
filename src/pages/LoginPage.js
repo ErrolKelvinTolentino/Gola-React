@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import AuthLayout from '../components/auth/AuthLayout';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase/config';
 
 function LoginPage({ onLogin, theme = 'light' }) {
   const isDark = theme === 'dark';
@@ -47,7 +49,7 @@ function LoginPage({ onLogin, theme = 'light' }) {
     filter: isLoginHovered ? 'brightness(1.04)' : 'brightness(1)'
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!email.trim() || !password.trim()) {
@@ -55,13 +57,11 @@ function LoginPage({ onLogin, theme = 'light' }) {
       return;
     }
 
-    const result = onLogin({ email: email.trim(), password });
-    if (!result?.ok) {
-      setError(result?.message || 'Invalid email or password.');
-      return;
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (err) {
+      setError('Failed to login: ' + err.message);
     }
-
-    setError('');
   };
 
   return (

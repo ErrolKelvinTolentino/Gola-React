@@ -1,227 +1,188 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Target, Loader2, Cpu, LayoutList, CheckCircle2, Repeat, Calendar, Zap, Clock, ChevronRight, Flame, BarChart2, BookOpen, Star } from 'lucide-react';
+import { generateClarifyingQuestions, generateRoadmap, mapAiRoadmapToAppSchema, isGeminiAvailable } from '../services/geminiService';
 
 /* ─────────────────────────────────────────────────────────────
    Roadmap generation engine
    Builds a phased plan from the wizard responses + goal params
 ───────────────────────────────────────────────────────────── */
 function buildRoadmap(goalName, goalVision, deadline, notes, responses) {
-  const pacing      = responses[2] || '';
-  const bottleneck  = responses[1] || '';
-  const timeline    = responses[0] || '';
+  const pacing = responses[2] || '';
+  const bottleneck = responses[1] || '';
+  const timeline = responses[0] || '';
 
-  const isHabits    = pacing.includes('habits');
-  const isBursts    = pacing.includes('bursts');
+  const isHabits = pacing.includes('habits');
+  const isBursts = pacing.includes('bursts');
   const isAgressive = timeline.includes('aggressive');
-  const isLongTerm  = timeline.includes('marathon');
+  const isLongTerm = timeline.includes('marathon');
 
   const now = Date.now();
   let idSeed = now;
   const uid = () => ++idSeed;
 
-  // ── AI-generated description ──────────────────────────────────
+  const source = `${goalName || ''} ${goalVision || ''}`.toLowerCase();
+  const normalizedGoal = goalName?.trim() || 'your goal';
+
+  const detectDomain = () => {
+    if (/(app|code|software|website|saas|api|react|flutter|backend|frontend|program)/.test(source)) return 'build';
+    if (/(fit|fitness|workout|gym|run|weight|health|diet|yoga)/.test(source)) return 'fitness';
+    if (/(study|exam|course|learn|school|university|certification|language)/.test(source)) return 'learning';
+    if (/(write|book|blog|content|newsletter|youtube|podcast|creator)/.test(source)) return 'content';
+    if (/(sales|revenue|client|business|startup|marketing|brand)/.test(source)) return 'business';
+    return 'general';
+  };
+
+  const domain = detectDomain();
+
+  const domainTaskPool = {
+    build: [
+      `Define the core scope for ${normalizedGoal}`,
+      `Break ${normalizedGoal} into implementation milestones`,
+      `Ship one usable increment for ${normalizedGoal}`,
+      `Run QA and bug triage for ${normalizedGoal}`,
+      `Collect feedback and prioritize the next sprint`
+    ],
+    fitness: [
+      `Set baseline metrics for ${normalizedGoal}`,
+      `Design your weekly training split for ${normalizedGoal}`,
+      `Complete a focused training block`,
+      `Track nutrition/sleep consistency for recovery`,
+      `Review progress and adjust intensity`
+    ],
+    learning: [
+      `Define the competency targets for ${normalizedGoal}`,
+      `Create a focused study roadmap by module`,
+      `Complete one deep study session with notes`,
+      `Practice with a quiz/exercise set`,
+      `Run a weekly recall/review checkpoint`
+    ],
+    content: [
+      `Define audience and outcome for ${normalizedGoal}`,
+      `Outline your first content pieces`,
+      `Produce and publish a core asset`,
+      `Repurpose one asset across channels`,
+      `Review performance and refine style`
+    ],
+    business: [
+      `Clarify offer and success metrics for ${normalizedGoal}`,
+      `Identify target segment and channel strategy`,
+      `Execute one growth experiment`,
+      `Analyze conversion bottlenecks`,
+      `Refine positioning based on real feedback`
+    ],
+    general: [
+      `Define measurable outcomes for ${normalizedGoal}`,
+      `Break ${normalizedGoal} into weekly milestones`,
+      `Complete one high-impact execution block`,
+      `Review blockers and remove one source of friction`,
+      `Run a weekly retrospective and recalibration`
+    ]
+  };
+
+  const tasks = domainTaskPool[domain];
+
   const bottleneckAdvice =
-    bottleneck.includes('Time')       ? 'Time-blocking and ruthless prioritization will be critical success levers.' :
-    bottleneck.includes('Knowledge')  ? 'Front-loading research and skill sprints de-risks execution early.' :
+    bottleneck.includes('Time') ? 'Time-blocking and ruthless prioritization will be critical success levers.' :
+    bottleneck.includes('Knowledge') ? 'Front-loading research and skill sprints de-risks execution early.' :
     bottleneck.includes('Motivation') ? 'Micro-wins and visible streaks will sustain momentum across the journey.' :
-                                        'Mapping external dependencies upfront reduces blocking surprises.';
+    'Mapping external dependencies upfront reduces blocking surprises.';
 
   const pacingAdvice =
-    isHabits  ? 'Daily habit compounding is your core mechanism — small consistent actions accumulate exponential results.' :
-    isBursts  ? 'Weekly deep-focus sessions maximize cognitive throughput for complex, creative output.' :
-                'Front-loading high-effort tasks creates early momentum and preserves energy for later phases.';
+    isHabits ? 'Daily habit compounding is your core mechanism.' :
+    isBursts ? 'Weekly deep-focus sessions are the primary engine.' :
+    'Front-loading hard tasks creates early momentum.';
 
   const summary = {
     headline: isAgressive ? 'High-Intensity Execution Sprint' : isLongTerm ? 'Sustainable Long-Term Build' : 'Balanced Progressive Roadmap',
-    description: `Your goal "${goalName || 'target'}" has been broken into structured phases designed around your stated constraints. ${bottleneckAdvice} ${pacingAdvice}${notes ? ` Additional context accounted for: ${notes.slice(0, 120)}.` : ''}`,
+    description: `Fallback planner generated a goal-specific plan for "${normalizedGoal}". ${bottleneckAdvice} ${pacingAdvice}${notes ? ` Notes considered: ${notes.slice(0, 120)}.` : ''}`,
     keyResults: [
-      isAgressive ? 'Complete all Phase 1 foundations within first 7 days' : 'Establish core routines within the first 2 weeks',
-      isHabits    ? 'Maintain a 5-day execution streak within Week 2' : 'Execute one major milestone per week',
-      bottleneck.includes('Knowledge') ? 'Complete one learning sprint before active execution begins' : 'Reduce friction by removing all blockers in Week 1',
-      `Reach 60% roadmap completion by the midpoint of your timeline`,
+      `Establish a clear execution system for ${normalizedGoal}`,
+      isHabits ? 'Sustain daily consistency through week 2' : 'Deliver at least one major milestone per week',
+      `Resolve the primary risk: ${bottleneck || 'execution friction'}`,
+      'Reach at least 60% roadmap completion by midpoint'
     ],
-    moodColor: isAgressive ? '#ec4899' : isLongTerm ? '#3b82f6' : '#8b5cf6',
+    moodColor: isAgressive ? '#ec4899' : isLongTerm ? '#3b82f6' : '#8b5cf6'
   };
 
-  // ── Phase definitions ────────────────────────────────────────
-  // Each task must match the full app task schema
   const mkTask = (title, recurrenceType, opts = {}) => ({
     id: uid(),
     title,
     recurrenceType,
-    oneTimeDate:  opts.oneTimeDate  ?? deadline,
-    deadline:     opts.deadline     ?? deadline,
-    weeklyDay:    opts.weeklyDay    ?? 1,
+    oneTimeDate: opts.oneTimeDate ?? deadline,
+    deadline: opts.deadline ?? deadline,
+    weeklyDay: opts.weeklyDay ?? 1,
     specificDays: opts.specificDays ?? [],
     timeEstimate: opts.timeEstimate ?? '30m',
-    energy:       opts.energy       ?? 'Medium',
-    completed:    false,
-    completedDates: [],
+    energy: opts.energy ?? 'Medium',
+    completed: false,
+    completedDates: []
   });
 
-  let phases = [];
+  const phases = [
+    {
+      id: 'p1',
+      label: isAgressive ? 'Days 1-3' : 'Week 1',
+      theme: 'Foundation',
+      color: '#8b5cf6',
+      icon: 'foundation',
+      description: `Set foundations and remove ambiguity for ${normalizedGoal}.`,
+      tasks: [
+        mkTask(tasks[0], 'one-time', { timeEstimate: '30m', energy: 'Medium' }),
+        mkTask(tasks[1], 'one-time', { timeEstimate: '1h', energy: 'High' })
+      ]
+    },
+    {
+      id: 'p2',
+      label: isAgressive ? 'Days 4-10' : 'Week 2',
+      theme: isBursts ? 'Deep Execution' : 'Execution',
+      color: '#ec4899',
+      icon: 'ignition',
+      description: `Drive visible progress on ${normalizedGoal} through focused output.`,
+      tasks: [
+        mkTask(tasks[2], 'one-time', { timeEstimate: isBursts ? '2h+' : '1h', energy: 'High' }),
+        mkTask(tasks[3], 'one-time', { timeEstimate: '1h', energy: 'Medium' })
+      ]
+    },
+    {
+      id: 'p3',
+      label: isLongTerm ? 'Week 3-4' : 'Week 3',
+      theme: 'Review and Optimization',
+      color: '#3b82f6',
+      icon: 'momentum',
+      description: 'Consolidate momentum, measure outcomes, and iterate.',
+      tasks: [
+        mkTask(tasks[4], 'one-time', { timeEstimate: '30m', energy: 'Low' }),
+        mkTask(`Create next-step plan for ${normalizedGoal}`, 'one-time', { timeEstimate: '30m', energy: 'Medium' })
+      ]
+    }
+  ];
 
   if (isHabits) {
-    // ── Daily-habit compounding plan ────────────────────────
-    phases = [
-      {
-        id: 'p1', label: 'Week 1', theme: 'Environment Setup',
-        color: '#8b5cf6', icon: 'foundation',
-        description: 'Prepare your environment, gather resources, and eliminate friction before daily habits begin.',
-        tasks: [
-          mkTask(`Define success metrics for "${goalName || 'goal'}"`,         'one-time', { timeEstimate: '30m', energy: 'Medium' }),
-          mkTask(`Research best practices & gather resources`,                  'one-time', { timeEstimate: '1h',  energy: 'High'   }),
-          mkTask(`Set up your workspace / tools`,                               'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Identify and remove top 3 daily blockers`,                    'one-time', { timeEstimate: '30m', energy: 'Medium' }),
-        ],
-      },
-      {
-        id: 'p2', label: 'Week 2', theme: 'Habit Ignition',
-        color: '#ec4899', icon: 'ignition',
-        description: 'Launch your core daily habits and build early momentum. Focus on consistency, not perfection.',
-        tasks: [
-          mkTask(`Day 1: First full execution session`,                         'one-time', { timeEstimate: '1h',  energy: 'High'   }),
-          mkTask(`Day 2–5: Daily micro-practice block`,                         'one-time', { timeEstimate: '15m', energy: 'Medium' }),
-          mkTask(`Day 6: Weekly self-review & calibration`,                     'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Day 7: Rest & passive reinforcement`,                         'one-time', { timeEstimate: '15m', energy: 'Low'    }),
-        ],
-      },
-      {
-        id: 'p3', label: 'Week 3 – 4', theme: 'Momentum Phase',
-        color: '#3b82f6', icon: 'momentum',
-        description: 'Compound daily output with increasing depth. Introduce stretch tasks to push above baseline.',
-        tasks: [
-          mkTask(`Increase session depth by 25%`,                               'one-time', { timeEstimate: '30m', energy: 'High'   }),
-          mkTask(`Add one accountability checkpoint`,                           'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Mid-goal milestone review`,                                   'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-          mkTask(`Document 3 lessons learned`,                                  'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-        ],
-      },
-      {
-        id: 'p_daily', label: 'Daily Habits', theme: 'Recurring Core',
-        color: '#10b981', icon: 'recurring',
-        description: 'These tasks repeat every day and are the engine of your compound growth.',
-        tasks: [
-          mkTask(`Daily 15-min execution block`,                                'daily',    { timeEstimate: '15m', energy: 'High', deadline: '', oneTimeDate: '' }),
-          mkTask(`Daily progress log (2 min)`,                                  'daily',    { timeEstimate: '15m', energy: 'Low',  deadline: '', oneTimeDate: '' }),
-        ],
-      },
-      {
-        id: 'p_weekly', label: 'Weekly Reviews', theme: 'Review & Adjust',
-        color: '#f59e0b', icon: 'review',
-        description: 'Weekly reviews keep you aligned and allow rapid adjustment of priorities.',
-        tasks: [
-          mkTask(`Weekly retro & planning session`,                             'weekly',   { timeEstimate: '30m', energy: 'Low',    weeklyDay: 0, deadline: '', oneTimeDate: '' }),
-          mkTask(`Week-ahead preparation block`,                                'weekly',   { timeEstimate: '15m', energy: 'Medium', weeklyDay: 6, deadline: '', oneTimeDate: '' }),
-        ],
-      },
-    ];
-
-  } else if (isBursts) {
-    // ── Deep-focus burst plan ───────────────────────────────
-    phases = [
-      {
-        id: 'p1', label: 'Week 1', theme: 'Orientation Sprint',
-        color: '#8b5cf6', icon: 'foundation',
-        description: 'Define scope, gather materials, and schedule your weekly deep-work blocks upfront.',
-        tasks: [
-          mkTask(`Scope definition & project kickoff`,                          'one-time', { timeEstimate: '1h',  energy: 'High'   }),
-          mkTask(`Resource library assembly`,                                   'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-          mkTask(`Calendar blocking: reserve deep-work slots`,                  'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Distraction elimination protocol`,                            'one-time', { timeEstimate: '15m', energy: 'Low'    }),
-        ],
-      },
-      {
-        id: 'p2', label: 'Week 2', theme: 'First Deep Burst',
-        color: '#ec4899', icon: 'ignition',
-        description: 'Your first major deep-work week. Aim for quality over quantity — produce one significant output.',
-        tasks: [
-          mkTask(`Deep Work Block A (Session 1)`,                               'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Deep Work Block A (Session 2)`,                               'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Output review & improvement cycle`,                           'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-          mkTask(`Week 2 retro: what worked, what didn't`,                      'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-        ],
-      },
-      {
-        id: 'p3', label: 'Week 3', theme: 'Depth Amplification',
-        color: '#3b82f6', icon: 'momentum',
-        description: 'Second burst cycle. Increase output quality and begin connecting earlier work into a cohesive whole.',
-        tasks: [
-          mkTask(`Deep Work Block B (Session 1)`,                               'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Deep Work Block B (Session 2)`,                               'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Cross-reference & synthesis session`,                         'one-time', { timeEstimate: '1h',  energy: 'High'   }),
-          mkTask(`Peer / self-feedback checkpoint`,                             'one-time', { timeEstimate: '30m', energy: 'Medium' }),
-        ],
-      },
-      {
-        id: 'p4', label: 'Week 4', theme: 'Consolidation & Delivery',
-        color: '#f59e0b', icon: 'delivery',
-        description: 'Polish, finalize, and deliver the core output. Wrap up with a retrospective.',
-        tasks: [
-          mkTask(`Final refinement session`,                                    'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Quality audit & gap check`,                                   'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-          mkTask(`Final delivery / publish / submit`,                           'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Full goal retrospective`,                                     'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-        ],
-      },
-      {
-        id: 'p_weekly', label: 'Recurring', theme: 'Ongoing Maintenance',
-        color: '#10b981', icon: 'recurring',
-        description: 'Light weekly and monthly touchpoints that keep progress visible between deep sessions.',
-        tasks: [
-          mkTask(`Weekly quick-sync (30 min)`,                                  'weekly',   { timeEstimate: '30m', energy: 'Low',    weeklyDay: 0, deadline: '', oneTimeDate: '' }),
-          mkTask(`Mid-week status pulse`,                                        'weekly',   { timeEstimate: '15m', energy: 'Low',    weeklyDay: 3, deadline: '', oneTimeDate: '' }),
-        ],
-      },
-    ];
-
+    phases.push({
+      id: 'p_daily',
+      label: 'Daily',
+      theme: 'Recurring Core',
+      color: '#10b981',
+      icon: 'recurring',
+      description: 'Daily actions that compound outcomes.',
+      tasks: [
+        mkTask(`Daily 15-min block on ${normalizedGoal}`, 'daily', { timeEstimate: '15m', energy: 'Medium', deadline: '', oneTimeDate: '' }),
+        mkTask('Daily progress log and reflection', 'daily', { timeEstimate: '15m', energy: 'Low', deadline: '', oneTimeDate: '' })
+      ]
+    });
   } else {
-    // ── Front-loaded aggressive plan ───────────────────────
-    phases = [
-      {
-        id: 'p1', label: 'Day 1 – 3', theme: 'Rapid Kickoff',
-        color: '#ec4899', icon: 'foundation',
-        description: 'Move fast. In the first 3 days, define everything and eliminate ambiguity before full execution.',
-        tasks: [
-          mkTask(`Day 1: Kick-off — define deliverables & KPIs`,                'one-time', { timeEstimate: '1h',  energy: 'High'   }),
-          mkTask(`Day 1: Competitive / context research blitz`,                 'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Day 2: Heavy Execution Slab A`,                               'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Day 3: Heavy Execution Slab B`,                               'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-        ],
-      },
-      {
-        id: 'p2', label: 'Day 4 – 7', theme: 'Peak Output',
-        color: '#8b5cf6', icon: 'ignition',
-        description: 'The hardest and most important work happens here. Protect these days ruthlessly.',
-        tasks: [
-          mkTask(`Day 4: Core deliverable build (Part 1 of 2)`,                 'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Day 5: Core deliverable build (Part 2 of 2)`,                 'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Day 6: Integration & coherence pass`,                         'one-time', { timeEstimate: '1h',  energy: 'High'   }),
-          mkTask(`Day 7: First draft review & gap list`,                        'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-        ],
-      },
-      {
-        id: 'p3', label: 'Week 2', theme: 'Refinement & Hardening',
-        color: '#3b82f6', icon: 'momentum',
-        description: 'Refine the Week 1 output. Resolve issues, incorporate feedback, and harden the work.',
-        tasks: [
-          mkTask(`Address gap list from Day 7 review`,                          'one-time', { timeEstimate: '2h+', energy: 'High'   }),
-          mkTask(`Quality assurance audit`,                                     'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-          mkTask(`Stakeholder / external check (if applicable)`,                'one-time', { timeEstimate: '30m', energy: 'Medium' }),
-          mkTask(`Final polish pass`,                                            'one-time', { timeEstimate: '1h',  energy: 'Medium' }),
-        ],
-      },
-      {
-        id: 'p4', label: 'Week 3+', theme: 'Finalization & sustainment',
-        color: '#f59e0b', icon: 'delivery',
-        description: 'Deliver, then maintain. Front-loaded goals still need a sustaining rhythm after launch.',
-        tasks: [
-          mkTask(`Delivery / launch action`,                                    'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Post-delivery retrospective`,                                 'one-time', { timeEstimate: '30m', energy: 'Low'    }),
-          mkTask(`Maintenance weekly check-in`,                                 'weekly',   { timeEstimate: '15m', energy: 'Low',    weeklyDay: 1, deadline: '', oneTimeDate: '' }),
-        ],
-      },
-    ];
+    phases.push({
+      id: 'p_weekly',
+      label: 'Weekly',
+      theme: 'Recurring Checkpoints',
+      color: '#f59e0b',
+      icon: 'review',
+      description: 'Weekly review and planning rhythm.',
+      tasks: [
+        mkTask(`Weekly review for ${normalizedGoal}`, 'weekly', { timeEstimate: '30m', energy: 'Low', weeklyDay: 0, deadline: '', oneTimeDate: '' }),
+        mkTask('Plan the next execution block', 'weekly', { timeEstimate: '15m', energy: 'Medium', weeklyDay: 6, deadline: '', oneTimeDate: '' })
+      ]
+    });
   }
 
   // Flatten all tasks for addGoal
@@ -346,10 +307,11 @@ function PhaseCard({ phase, index, isLast, updateTaskTitle }) {
 /* ─────────────────────────────────────────────────────────────
    Main wizard component
 ───────────────────────────────────────────────────────────── */
-function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCancel, onSaveWithTasks }) {
+function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCancel, onSaveWithTasks, aiEnabled }) {
   const [step, setStep] = useState(1);
   const [deadline, setDeadline] = useState('');
   const [notes, setNotes] = useState('');
+  const [aiStatusMessage, setAiStatusMessage] = useState('');
 
   const [questions, setQuestions]                 = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -364,37 +326,101 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
     if (step !== 3) return;
     setResponses({});
     setCurrentQuestionIndex(0);
-    const t = setTimeout(() => {
-      setQuestions([
-        {
-          text: `To properly construct the roadmap for "${goalName || 'this target'}", how aggressive is your timeline based on your deadline?`,
-          options: ['Very aggressive (heavy daily workload)', 'Moderate & steady (balanced weekly tasks)', 'Long-term marathon (light, consistent steps)'],
-        },
-        {
-          text: `What is the most likely bottleneck or challenge you'll face pursuing this goal?`,
-          options: ['Time & Scheduling constraints', 'Knowledge or Skill gaps', 'Motivation & Energy', 'External dependencies / resources'],
-        },
-        {
-          text: `How do you prefer to pace your execution workflows?`,
-          options: ['Front-load the hardest tasks early', 'Evenly spread tiny daily habits', 'Work in weekly deep-focus bursts'],
-        },
-      ]);
-      setStep(4);
-    }, 1500);
-    return () => clearTimeout(t);
+    setAiStatusMessage('');
+    let cancelled = false;
+
+    const fetchQuestions = async () => {
+      if (aiEnabled && isGeminiAvailable()) {
+        let aiQuestions = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            aiQuestions = await generateClarifyingQuestions(goalName, goalVision, deadline, notes);
+            if (aiQuestions?.questions?.length) break;
+          } catch (error) {
+            if (attempt === 1) {
+              console.warn('AI questions failed, falling back:', error);
+              setAiStatusMessage(`AI question generation failed: ${error.message || 'unknown error'}`);
+            }
+          }
+        }
+
+        if (!cancelled && aiQuestions?.questions?.length) {
+          setQuestions(aiQuestions.questions);
+          setStep(4);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        setQuestions([
+          {
+            text: `To properly construct the roadmap for "${goalName || 'this target'}", how aggressive is your timeline based on your deadline?`,
+            options: ['Very aggressive (heavy daily workload)', 'Moderate & steady (balanced weekly tasks)', 'Long-term marathon (light, consistent steps)'],
+          },
+          {
+            text: `What is the most likely bottleneck or challenge you'll face pursuing this goal?`,
+            options: ['Time & Scheduling constraints', 'Knowledge or Skill gaps', 'Motivation & Energy', 'External dependencies / resources'],
+          },
+          {
+            text: `How do you prefer to pace your execution workflows?`,
+            options: ['Front-load the hardest tasks early', 'Evenly spread tiny daily habits', 'Work in weekly deep-focus bursts'],
+          },
+        ]);
+        setStep(4);
+      }
+    };
+
+    fetchQuestions();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
   // ── Step 5: build detailed roadmap ────────────────────────────
   useEffect(() => {
     if (step !== 5) return;
-    const t = setTimeout(() => {
-      const result = buildRoadmap(goalName, goalVision, deadline, notes, responsesRef.current);
-      setRoadmap(result);
-      setStep(6);
-    }, 2800);
-    return () => clearTimeout(t);
-  }, [step, goalName, goalVision, deadline, notes]);
+    setAiStatusMessage('');
+    let cancelled = false;
+
+    const fetchRoadmap = async () => {
+      if (aiEnabled && isGeminiAvailable()) {
+        let mapped = null;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const aiResponse = await generateRoadmap(goalName, goalVision, deadline, notes, responsesRef.current);
+            mapped = mapAiRoadmapToAppSchema(aiResponse, deadline);
+            break;
+          } catch (error) {
+            if (attempt === 1) {
+              console.warn('AI roadmap failed, falling back:', error);
+              setAiStatusMessage(`AI roadmap generation failed: ${error.message || 'unknown error'}`);
+            }
+          }
+        }
+
+        if (!cancelled && mapped) {
+          setAiStatusMessage('');
+          setRoadmap(mapped);
+          setStep(6);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        const result = buildRoadmap(goalName, goalVision, deadline, notes, responsesRef.current);
+        result.isAiGenerated = false;
+        if (!aiEnabled) {
+          setAiStatusMessage('AI features are disabled in Settings.');
+        } else if (!isGeminiAvailable()) {
+          setAiStatusMessage('Gemini API key is missing or invalid in environment configuration.');
+        }
+        setRoadmap(result);
+        setStep(6);
+      }
+    };
+
+    fetchRoadmap();
+    return () => { cancelled = true; };
+  }, [step, goalName, goalVision, deadline, notes, aiEnabled]);
 
   const updateTaskTitle = (taskId, newTitle) => {
     setRoadmap(prev => {
@@ -544,6 +570,21 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
       {step === 6 && roadmap && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
 
+          {!roadmap.isAiGenerated && (
+            <div style={{
+              marginBottom: '12px',
+              padding: '10px 12px',
+              borderRadius: '10px',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              background: 'rgba(245, 158, 11, 0.08)',
+              color: '#f59e0b',
+              fontSize: '0.82rem',
+              fontWeight: 600
+            }}>
+              Using local planner fallback. {aiStatusMessage || 'Gemini response was unavailable.'}
+            </div>
+          )}
+
           {/* Scrollable body */}
           <div style={{ maxHeight: '62vh', overflowY: 'auto', paddingRight: '12px', paddingBottom: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
@@ -583,7 +624,9 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
                   <BookOpen size={18} color={roadmap.summary.moodColor} />
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: roadmap.summary.moodColor }}>AI Analysis</div>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: roadmap.summary.moodColor }}>
+                    {roadmap.isAiGenerated ? 'AI Analysis' : 'Rules-Based Analysis'}
+                  </div>
                   <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text)' }}>{roadmap.summary.headline}</div>
                 </div>
               </div>
@@ -648,7 +691,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
             <button type="button" className="ghost-btn" onClick={onCancel}>Discard</button>
             <button type="button" className="primary-btn" onClick={() => {
               if (notes) setGoalVision(v => v ? `${v}\n\nNotes: ${notes}` : `Notes: ${notes}`);
-              onSaveWithTasks(roadmap.allTasks);
+              onSaveWithTasks(roadmap.allTasks, roadmap);
             }}>
               Adopt Roadmap <LayoutList size={16} style={{ marginLeft: '8px' }} />
             </button>

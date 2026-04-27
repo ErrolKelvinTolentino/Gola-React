@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validProfileWrite() {
+      return request.resource.data.keys().hasOnly([
+        'email',
+        'displayName',
+        'createdAt',
+        'updatedAt'
+      ])
+      && request.resource.data.email is string
+      && request.resource.data.displayName is string
+      && request.resource.data.createdAt is string
+      && request.resource.data.updatedAt is string;
+    }
+
+    function validAppStateWrite() {
+      return request.resource.data.keys().hasOnly([
+        'goals',
+        'focusSessions',
+        'streak',
+        'lastActiveDate',
+        'aiEnabled',
+        'theme',
+        'settings',
+        'createdAt',
+        'updatedAt'
+      ])
+      && request.resource.data.goals is list
+      && request.resource.data.focusSessions is list
+      && request.resource.data.streak is int
+      && (request.resource.data.lastActiveDate == null || request.resource.data.lastActiveDate is string)
+      && request.resource.data.aiEnabled is bool
+      && request.resource.data.theme in ['light', 'dark']
+      && request.resource.data.settings is map
+      && request.resource.data.updatedAt is string
+      && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is string);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validProfileWrite();
+      allow delete: if false;
+
+      match /app/state {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validAppStateWrite();
+        allow delete: if false;
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+  }
+}
