@@ -175,7 +175,7 @@ function ProfilePage({ user, theme = 'light', onSaveProfile, onLogout }) {
                 Gola — AI Goal Management
               </p>
               <p style={{ margin: 0, color: mutedText, fontSize: '0.82rem' }}>
-                Version 2.0 • Powered by Gemini AI
+                Version 2.0 • Powered by Groq AI
               </p>
             </div>
           </div>

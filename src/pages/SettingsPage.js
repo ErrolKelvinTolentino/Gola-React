@@ -1,9 +1,9 @@
 import React from 'react';
 import { Download, User, Sparkles, Cpu } from 'lucide-react';
-import { isGeminiAvailable } from '../services/geminiService';
+import { isGroqAvailable } from '../services/groqService';
 
 function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, onOpenProfile }) {
-  const geminiAvailable = isGeminiAvailable();
+  const groqAvailable = isGroqAvailable();
 
   return (
     <section className="page page-enter">
@@ -34,7 +34,7 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <strong style={{ fontSize: '1.1rem' }}>AI Features</strong>
-              {geminiAvailable ? (
+              {groqAvailable ? (
                 <span style={{
                   fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
                   letterSpacing: '0.06em', padding: '3px 8px', borderRadius: '6px',
@@ -55,10 +55,10 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
               )}
             </div>
             <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
-              Enable Gemini-powered morning briefings, domain-specific goal planning, and weekly review insights.
-              {!geminiAvailable && (
+              Enable Groq-powered morning briefings, domain-specific goal planning, and weekly review insights.
+              {!groqAvailable && (
                 <span style={{ display: 'block', marginTop: '6px', fontSize: '0.82rem', color: '#f59e0b' }}>
-                  Set <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.78rem' }}>REACT_APP_GEMINI_API_KEY</code> in your .env file to enable AI features.
+                  Set <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.78rem' }}>REACT_APP_GROQ_API_KEY</code> in your .env file to enable AI features.
                 </span>
               )}
             </p>
@@ -68,8 +68,8 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
             className={aiEnabled ? 'toggle on' : 'toggle'}
             onClick={() => setAiEnabled(!aiEnabled)}
             aria-pressed={aiEnabled}
-            disabled={!geminiAvailable}
-            style={{ opacity: geminiAvailable ? 1 : 0.5 }}
+            disabled={!groqAvailable}
+            style={{ opacity: groqAvailable ? 1 : 0.5 }}
           >
             <span />
           </button>

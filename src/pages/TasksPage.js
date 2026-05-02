@@ -665,16 +665,24 @@ function TasksPage({
                             fontSize: '1rem',
                             cursor: 'pointer',
                             display: 'flex',
+                            flexDirection: 'column',
                             alignItems: 'flex-start',
                           }}
                         >
-                          <input
-                            type="checkbox"
-                            checked={false}
-                            onChange={() => handleToggleTaskDone(goalId, task.id)}
-                            style={{ width: '22px', height: '22px', marginRight: '8px', marginTop: '2px' }}
-                          />
-                          <span style={{ fontWeight: 600, lineHeight: 1.4 }}>{task.title}</span>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <input
+                              type="checkbox"
+                              checked={false}
+                              onChange={() => handleToggleTaskDone(goalId, task.id)}
+                              style={{ width: '22px', height: '22px', marginRight: '8px', marginTop: '2px' }}
+                            />
+                            <span style={{ fontWeight: 600, lineHeight: 1.4 }}>{task.title}</span>
+                          </div>
+                          {task.description && (
+                            <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+                              {task.description}
+                            </div>
+                          )}
                         </label>
                         <button 
                           className="primary-btn" 
@@ -757,16 +765,24 @@ function TasksPage({
                           fontSize: '0.95rem',
                           cursor: 'pointer',
                           display: 'flex',
-                          alignItems: 'center',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={true}
-                          onChange={() => handleToggleTaskDone(goalId, task.id)}
-                          style={{ width: '20px', height: '20px', marginRight: '6px' }}
-                        />
-                        <span>{task.title}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input
+                            type="checkbox"
+                            checked={true}
+                            onChange={() => handleToggleTaskDone(goalId, task.id)}
+                            style={{ width: '20px', height: '20px', marginRight: '6px' }}
+                          />
+                          <span>{task.title}</span>
+                        </div>
+                        {task.description && (
+                          <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+                            {task.description}
+                          </div>
+                        )}
                       </label>
                       <div className="task-meta" style={{ marginTop: '8px' }}>
                         <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

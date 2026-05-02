@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sparkles, Zap, Coffee, Target, Star, Loader2, Play } from 'lucide-react';
-import { generateMorningBriefing, isGeminiAvailable } from '../services/geminiService';
+import { generateMorningBriefing, isGroqAvailable } from '../services/groqService';
 
 const MOOD_ICONS = {
   motivated: Zap,
@@ -47,7 +47,7 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
 
     const fetchBriefing = async () => {
       // Try AI first if enabled
-      if (aiEnabled && isGeminiAvailable() && (todayTasks.length > 0 || goals.length > 0)) {
+      if (aiEnabled && isGroqAvailable() && (todayTasks.length > 0 || goals.length > 0)) {
         setLoading(true);
         try {
           const aiResult = await generateMorningBriefing(todayTasks, goals, completionRate, streak);

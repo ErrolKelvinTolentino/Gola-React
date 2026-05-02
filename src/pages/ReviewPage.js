@@ -4,7 +4,7 @@ import {
   Clock, ChevronDown, ChevronUp, Loader2, Sparkles, History
 } from 'lucide-react';
 import { addDays, isTaskActiveOnDate, isTaskDoneForDate as isTaskDoneForDateUtil } from '../utils/dateUtils';
-import { generateWeeklyReview, isGeminiAvailable } from '../services/geminiService';
+import { generateWeeklyReview, isGroqAvailable } from '../services/groqService';
 
 const STATUS_CONFIG = {
   on_track: { label: 'On Track', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', icon: CheckCircle2 },
@@ -80,7 +80,7 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, today, aiEnabled, isTa
     let cancelled = false;
 
     const fetchReview = async () => {
-      if (!aiEnabled || !isGeminiAvailable() || goalsWithTasksCount === 0) {
+      if (!aiEnabled || !isGroqAvailable() || goalsWithTasksCount === 0) {
         setAiReview(null);
         setLoading(false);
         return;

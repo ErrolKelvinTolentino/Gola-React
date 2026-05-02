@@ -1,14 +1,16 @@
 /* ─────────────────────────────────────────────────────────────
-   Gemini AI Service Layer
-   Handles all communication with the Gemini API.
+   Groq AI Service Layer
+   Handles all communication with the Groq OpenAI-compatible API.
    Every function has try/catch + returns structured JSON.
    Callers should always wrap in try/catch and fall back gracefully.
 ───────────────────────────────────────────────────────────── */
 
-const GEMINI_API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-const GEMINI_MODELS = [
-  'gemini-2.5-flash-lite'];
-const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GROQ_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
+const GROQ_MODELS = [
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b'
+];
+const GROQ_ENDPOINT_BASE = 'https://api.groq.com/openai/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 20000;
 const MAX_RETRIES_PER_MODEL = 2;
 const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
@@ -43,7 +45,7 @@ function extractJsonPayload(rawText) {
     if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
       return JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
     }
-    throw new Error('Gemini returned invalid JSON.');
+    throw new Error('Groq returned invalid JSON.');
   }
 }
 
@@ -88,7 +90,7 @@ function autoSpreadWeeklyTasks(phases) {
   return safePhases;
 }
 
-function parseGeminiError(errorText) {
+function parseGroqError(errorText) {
   try {
     const parsed = JSON.parse(errorText);
     const apiError = parsed?.error || {};
@@ -117,69 +119,66 @@ function isHardQuotaExhausted(statusCode, parsedMessage, parsedStatus) {
   );
 }
 
-function toFriendlyGeminiError(statusCode, modelName, parsedMessage, parsedStatus) {
+function toFriendlyGroqError(statusCode, modelName, parsedMessage, parsedStatus) {
   const msg = (parsedMessage || '').toLowerCase();
 
   if (isHardQuotaExhausted(statusCode, parsedMessage, parsedStatus)) {
     return new Error(
-      `Gemini quota exceeded for ${modelName}. This API key/project currently has no available request quota. Enable billing or increase quota in Google AI Studio, then retry.`
+      `Groq quota exceeded for ${modelName}. This API key/project currently has no available request quota. Ensure your Groq account has available quota, then retry.`
     );
   }
 
   if (statusCode === 503 || parsedStatus === 'UNAVAILABLE') {
-    return new Error(`Gemini is temporarily overloaded (${modelName}). Please retry in a few seconds.`);
+    return new Error(`Groq is temporarily overloaded (${modelName}). Please retry in a few seconds.`);
   }
 
   if (statusCode === 429 && msg.includes('retry')) {
-    return new Error(`Gemini is rate-limited (${modelName}). Please retry shortly.`);
+    return new Error(`Groq is rate-limited (${modelName}). Please retry shortly.`);
   }
 
-  return new Error(`Gemini API error ${statusCode} (${modelName}): ${parsedMessage}`);
+  return new Error(`Groq API error ${statusCode} (${modelName}): ${parsedMessage}`);
 }
 
 /**
- * Base wrapper for Gemini API calls.
+ * Base wrapper for Groq API calls.
  * Sends a structured prompt with system instruction and returns parsed JSON.
  */
-export async function callGemini(prompt, systemInstruction) {
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
-    throw new Error('Gemini API key not configured');
+export async function callGroq(prompt, systemInstruction) {
+  if (!GROQ_API_KEY || GROQ_API_KEY === 'your_groq_api_key_here') {
+    throw new Error('Groq API key not configured');
   }
-
-  const body = {
-    system_instruction: {
-      parts: [{ text: systemInstruction }]
-    },
-    contents: [
-      {
-        parts: [{ text: prompt }]
-      }
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.7,
-      maxOutputTokens: 4096
-    }
-  };
 
   let lastError = null;
 
-  for (const modelName of GEMINI_MODELS) {
+  for (const modelName of GROQ_MODELS) {
     for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt += 1) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
-        const response = await fetch(`${GEMINI_ENDPOINT_BASE}/${modelName}:generateContent?key=${GEMINI_API_KEY}`, {
+        const requestBody = {
+          model: modelName,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 4096
+        };
+
+        const response = await fetch(GROQ_ENDPOINT_BASE, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${GROQ_API_KEY}`
+          },
+          body: JSON.stringify(requestBody),
           signal: controller.signal
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          const parsed = parseGeminiError(errorText);
+          const parsed = parseGroqError(errorText);
           const quotaExhausted = isHardQuotaExhausted(response.status, parsed.message, parsed.status);
           const canRetry = RETRYABLE_STATUS_CODES.includes(response.status);
 
@@ -189,7 +188,7 @@ export async function callGemini(prompt, systemInstruction) {
             continue;
           }
 
-          lastError = toFriendlyGeminiError(response.status, modelName, parsed.message, parsed.status);
+          lastError = toFriendlyGroqError(response.status, modelName, parsed.message, parsed.status);
 
           if (quotaExhausted) {
             throw lastError;
@@ -199,10 +198,10 @@ export async function callGemini(prompt, systemInstruction) {
         }
 
         const data = await response.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const rawText = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text;
 
         if (!rawText) {
-          throw new Error(`Empty response from Gemini API (${modelName}).`);
+          throw new Error(`Empty response from Groq API (${modelName}).`);
         }
 
         return extractJsonPayload(rawText);
@@ -213,7 +212,7 @@ export async function callGemini(prompt, systemInstruction) {
             await wait(backoffMs);
             continue;
           }
-          lastError = new Error(`Gemini request timed out (${modelName}).`);
+          lastError = new Error(`Groq request timed out (${modelName}).`);
         } else {
           lastError = error;
           if (attempt < MAX_RETRIES_PER_MODEL) {
@@ -229,7 +228,7 @@ export async function callGemini(prompt, systemInstruction) {
     }
   }
 
-  throw lastError || new Error('Gemini request failed across all configured models.');
+  throw lastError || new Error('Groq request failed across all configured models.');
 }
 
 /**
@@ -262,11 +261,11 @@ Additional notes: "${notes || 'None'}"
 
 Generate 3 domain-specific clarifying questions for this goal.`;
 
-  const response = await callGemini(prompt, systemInstruction);
+  const response = await callGroq(prompt, systemInstruction);
   const questions = Array.isArray(response?.questions) ? response.questions.slice(0, 3) : [];
 
   if (questions.length === 0) {
-    throw new Error('Gemini returned no clarifying questions.');
+    throw new Error('Groq returned no clarifying questions.');
   }
 
   return {
@@ -313,7 +312,12 @@ CRITICAL RULES — YOU MUST FOLLOW ALL OF THEM:
    - GOOD: "Memorize 50 most common Spanish verbs with flashcards"
    - BAD: "Practice Spanish" or "Learn vocabulary"
 
-6. THE FIRST TWO PHASES must contain one-time setup/milestone tasks.
+6. EACH TASK MUST INCLUDE A DETAILED DESCRIPTION:
+   - Use the task 'description' field to explain the next steps, provide a mini-tutorial, or suggest learning resources.
+   - Avoid generic wording like "Research X" without concrete guidance.
+   - Good examples: "Read this article ... then summarize key concepts" or "Watch a tutorial on ... and practice with ...".
+
+7. THE FIRST TWO PHASES must contain one-time setup/milestone tasks.
    The middle phases should have a mix.
    The final phase should have assessment/delivery tasks.
 
@@ -351,6 +355,7 @@ Return JSON with this exact schema:
       "tasks": [
         {
           "title": "string",
+          "description": "string",
           "recurrenceType": "one-time|daily|weekly",
           "timeEstimate": "15m|30m|1h|2h+",
           "energy": "Low|Medium|High",
@@ -375,17 +380,17 @@ REMEMBER: Maximum 2 daily tasks total. Mix one-time milestones, daily habits (ma
 
 Generate a personalized, domain-specific roadmap for this goal NOW.`;
 
-  const response = await callGemini(prompt, systemInstruction);
+  const response = await callGroq(prompt, systemInstruction);
 
   if (!Array.isArray(response?.phases) || response.phases.length === 0) {
-    throw new Error('Gemini roadmap is missing phases.');
+    throw new Error('Groq roadmap is missing phases.');
   }
 
   // Validate: if there are more than 2 daily tasks, force retry
   const allGeneratedTasks = response.phases.flatMap(p => p.tasks || []);
   const dailyCount = allGeneratedTasks.filter(t => t.recurrenceType === 'daily').length;
   if (dailyCount > 2) {
-    console.warn(`Gemini returned ${dailyCount} daily tasks. Retrying with stricter prompt...`);
+    console.warn(`Groq returned ${dailyCount} daily tasks. Retrying with stricter prompt...`);
     throw new Error('Too many daily tasks — roadmap needs restructuring.');
   }
 
@@ -453,7 +458,7 @@ Stats:
 
 Generate a morning briefing for this user.`;
 
-  const response = await callGemini(prompt, systemInstruction);
+  const response = await callGroq(prompt, systemInstruction);
 
   return {
     greeting: safeString(response?.greeting, 'Hello'),
@@ -509,7 +514,7 @@ ${goalDetails || 'No goal data available'}
 
 Generate a weekly review with insights and adjustment suggestions.`;
 
-  const response = await callGemini(prompt, systemInstruction);
+  const response = await callGroq(prompt, systemInstruction);
   const goalInsights = Array.isArray(response?.goalInsights) ? response.goalInsights : [];
   const recommendedAdjustments = Array.isArray(response?.recommendedAdjustments) ? response.recommendedAdjustments : [];
 
@@ -546,6 +551,7 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
     const tasks = (phase.tasks || []).map(task => ({
       id: uid(),
       title: task.title || 'Untitled task',
+      description: safeString(task.description, ''),
       recurrenceType: validRecurrenceTypes.includes(task.recurrenceType) ? task.recurrenceType : 'one-time',
       oneTimeDate: task.oneTimeDate || deadline || '',
       deadline: task.deadline || deadline || '',
@@ -588,9 +594,9 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
 }
 
 /**
- * Check if Gemini API is available and configured.
+ * Check if Groq API is available and configured.
  */
-export function isGeminiAvailable() {
-  const key = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.trim() : '';
-  return Boolean(key && key !== 'your_gemini_api_key_here');
+export function isGroqAvailable() {
+  const key = typeof GROQ_API_KEY === 'string' ? GROQ_API_KEY.trim() : '';
+  return Boolean(key && key !== 'your_groq_api_key_here');
 }

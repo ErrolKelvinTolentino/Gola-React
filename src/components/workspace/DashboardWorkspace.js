@@ -138,6 +138,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     const newTask = {
       id: createUniqueId(),
       title: form.title.trim(),
+      description: '',
       recurrenceType: form.recurrenceType,
       oneTimeDate: form.oneTimeDate,
       weeklyDay: form.weeklyDay,

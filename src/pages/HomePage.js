@@ -503,6 +503,20 @@ function HomePage({
                     }}>
                       {item.task.title}
                     </div>
+                    {item.task.description && (
+                      <div style={{
+                        fontSize: '0.72rem',
+                        color: 'var(--muted)',
+                        marginTop: '4px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical'
+                      }}>
+                        {item.task.description}
+                      </div>
+                    )}
                     <div style={{ 
                       display: 'flex', 
                       gap: '8px', 

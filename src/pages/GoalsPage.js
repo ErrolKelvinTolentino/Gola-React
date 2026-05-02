@@ -254,6 +254,21 @@ function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, d
           textDecoration: isDoneToday ? 'line-through' : 'none',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
         }}>{task.title}</div>
+        {task.description && (
+          <div style={{
+            marginTop: '6px',
+            fontSize: dense ? '0.72rem' : '0.82rem',
+            color: 'var(--muted)',
+            lineHeight: 1.5,
+            display: '-webkit-box',
+            WebkitLineClamp: dense ? 2 : 3,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            {task.description}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px', alignItems: 'center' }}>
           <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
             <RotateCw size={11} /> {task.recurrenceType === 'one-time' ? 'Once' : task.recurrenceType === 'daily' ? 'Daily' : task.recurrenceType === 'weekly' ? 'Weekly' : 'Custom'}

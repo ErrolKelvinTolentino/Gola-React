@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Target, Loader2, Cpu, LayoutList, CheckCircle2, Repeat, Calendar, Zap, Clock, ChevronRight, Flame, BarChart2, BookOpen, Star } from 'lucide-react';
-import { generateClarifyingQuestions, generateRoadmap, mapAiRoadmapToAppSchema, isGeminiAvailable } from '../services/geminiService';
+import { generateClarifyingQuestions, generateRoadmap, mapAiRoadmapToAppSchema, isGroqAvailable } from '../services/groqService';
 
 /* ─────────────────────────────────────────────────────────────
    Roadmap generation engine
@@ -107,6 +107,7 @@ function buildRoadmap(goalName, goalVision, deadline, notes, responses) {
   const mkTask = (title, recurrenceType, opts = {}) => ({
     id: uid(),
     title,
+    description: opts.description ?? '',
     recurrenceType,
     oneTimeDate: opts.oneTimeDate ?? deadline,
     deadline: opts.deadline ?? deadline,
@@ -330,7 +331,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
     let cancelled = false;
 
     const fetchQuestions = async () => {
-      if (aiEnabled && isGeminiAvailable()) {
+      if (aiEnabled && isGroqAvailable()) {
         let aiQuestions = null;
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
@@ -382,7 +383,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
     let cancelled = false;
 
     const fetchRoadmap = async () => {
-      if (aiEnabled && isGeminiAvailable()) {
+      if (aiEnabled && isGroqAvailable()) {
         let mapped = null;
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
@@ -410,8 +411,8 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
         result.isAiGenerated = false;
         if (!aiEnabled) {
           setAiStatusMessage('AI features are disabled in Settings.');
-        } else if (!isGeminiAvailable()) {
-          setAiStatusMessage('Gemini API key is missing or invalid in environment configuration.');
+        } else if (!isGroqAvailable()) {
+          setAiStatusMessage('Groq API key is missing or invalid in environment configuration.');
         }
         setRoadmap(result);
         setStep(6);
@@ -581,7 +582,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
               fontSize: '0.82rem',
               fontWeight: 600
             }}>
-              Using local planner fallback. {aiStatusMessage || 'Gemini response was unavailable.'}
+              Using local planner fallback. {aiStatusMessage || 'Groq response was unavailable.'}
             </div>
           )}
 
