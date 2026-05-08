@@ -548,6 +548,7 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
   const validEnergies = ['Low', 'Medium', 'High'];
 
   const phases = (aiResponse.phases || []).map((phase, phaseIdx) => {
+    const phaseId = `p${phaseIdx + 1}`;
     const tasks = (phase.tasks || []).map(task => ({
       id: uid(),
       title: task.title || 'Untitled task',
@@ -559,12 +560,13 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
       specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
       timeEstimate: validTimeEstimates.includes(task.timeEstimate) ? task.timeEstimate : '30m',
       energy: validEnergies.includes(task.energy) ? task.energy : 'Medium',
+      phaseId,
       completed: false,
       completedDates: []
     }));
 
     return {
-      id: `p${phaseIdx + 1}`,
+      id: phaseId,
       label: phase.label || `Phase ${phaseIdx + 1}`,
       theme: phase.theme || 'Execution',
       color: phase.color || '#8b5cf6',

@@ -26,7 +26,7 @@ function ModalOverlay({ onClose, children }) {
 /* ═══════════════════════════════════════════════════════════════════
    GoalTaskForm — 3-step wizard for adding/editing a single task
 ═══════════════════════════════════════════════════════════════════ */
-function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isEdit, toggleSpecificDayHandler }) {
+function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isEdit, toggleSpecificDayHandler, phases = [] }) {
   const [step, setStep] = useState(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -64,6 +64,14 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
             autoFocus
             style={{ fontSize: '1rem', padding: '12px 16px' }}
           />
+          {phases.length > 0 && (
+            <select value={form.phaseId || ''} onChange={e => onChange({ phaseId: e.target.value })} style={{ fontSize: '0.9rem', padding: '10px 14px' }}>
+              <option value="">No phase</option>
+              {phases.map(phase => (
+                <option key={phase.id} value={phase.id}>{phase.label}</option>
+              ))}
+            </select>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <select value={form.timeEstimate || '30m'} onChange={e => onChange({ timeEstimate: e.target.value })}>
               <option value="15m">15 min</option>
@@ -315,11 +323,14 @@ function GoalsPage({
   getRecurrenceText, prettyDate, today,
   isGoalModalOpen, openGoalModal, closeGoalModal,
   goalName, setGoalName, goalVision, setGoalVision,
-  addGoal, updateTask, completeGoal, theme, aiEnabled
+  addGoal, updateTask, addPhaseToGoal, movePhase, completeGoal, theme, aiEnabled
 }) {
   /* ── Local UI state ───────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState('tasks');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false);
+  const [newPhaseName, setNewPhaseName] = useState('');
+  const [newPhaseColor, setNewPhaseColor] = useState('#8b5cf6');
   const [editingTask, setEditingTask] = useState(null);
   const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState(false);
   const [creationMode, setCreationMode] = useState(null);
@@ -327,6 +338,22 @@ function GoalsPage({
   const [taskFilter, setTaskFilter] = useState('all');
   const [denseMode, setDenseMode] = useState(false);
   const [sortBy, setSortBy] = useState('default');
+
+  const handleAddPhase = (e) => {
+    e.preventDefault();
+    if (!newPhaseName.trim()) return;
+    
+    // Add phase to selected goal
+    addPhaseToGoal(selectedGoal.id, {
+      id: `phase-${Date.now()}`,
+      label: newPhaseName.trim(),
+      color: newPhaseColor,
+      description: ''
+    });
+
+    setNewPhaseName('');
+    setIsPhaseModalOpen(false);
+  };
 
   /* ── Reset creation mode when modal closes ───────────────── */
   useEffect(() => { if (!isGoalModalOpen) setCreationMode(null); }, [isGoalModalOpen]);
@@ -716,6 +743,12 @@ function GoalsPage({
               {denseMode ? 'Comfort' : 'Compact'}
             </button>
 
+            {/* Add Phase */}
+            <button className="primary-btn" onClick={() => setIsPhaseModalOpen(true)}
+              style={{ padding: '8px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap', background: 'var(--bg-2)', color: 'var(--text)', border: '1px solid var(--line)' }}>
+              <Plus size={16} style={{ marginRight: '4px' }} />Add Phase
+            </button>
+
             {/* Add task */}
             <button className="primary-btn" onClick={() => setIsTaskModalOpen(true)}
               style={{ padding: '8px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
@@ -748,6 +781,128 @@ function GoalsPage({
                   <Plus size={16} style={{ marginRight: '4px' }} />Add Task
                 </button>
               )}
+            </div>
+          ) : selectedGoal.roadmap?.phases?.length > 0 && sortBy === 'default' ? (
+            <div style={{ display: 'grid', gap: '16px' }}>
+              {selectedGoal.roadmap.phases.map((phase, index) => {
+                const phasePending = pendingTasks.filter(t => t.phaseId === phase.id || phase.tasks?.some(pt => pt.id === t.id));
+                const phaseDone = doneTasks.filter(t => t.phaseId === phase.id || phase.tasks?.some(pt => pt.id === t.id));
+                if (phasePending.length === 0 && phaseDone.length === 0) return null;
+
+                return (
+                  <div key={phase.id} className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: `1px solid ${phase.color || 'var(--line)'}` }}>
+                    <div style={{ 
+                      padding: '12px 18px', 
+                      background: phase.color ? `${phase.color}15` : 'var(--bg-2)', 
+                      borderBottom: `1px solid ${phase.color ? `${phase.color}30` : 'var(--line)'}`, 
+                      display: 'flex', alignItems: 'center', gap: '10px' 
+                    }}>
+                      <div style={{ padding: '2px 8px', borderRadius: '6px', background: phase.color ? `${phase.color}25` : 'var(--panel)', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: phase.color || 'var(--text)' }}>
+                        {phase.label}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: 'auto', opacity: 0.6 }}>
+                        {index > 0 && (
+                          <button onClick={() => movePhase(selectedGoal.id, index, 'up')} className="ghost-btn" style={{ padding: '0', height: '22px', width: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', fontSize: '0.8rem' }}>
+                            ↑
+                          </button>
+                        )}
+                        {index < selectedGoal.roadmap.phases.length - 1 && (
+                          <button onClick={() => movePhase(selectedGoal.id, index, 'down')} className="ghost-btn" style={{ padding: '0', height: '22px', width: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', fontSize: '0.8rem' }}>
+                            ↓
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {phase.description && (
+                      <div style={{ 
+                        padding: '0 18px 10px', 
+                        background: phase.color ? `${phase.color}15` : 'var(--bg-2)', 
+                        borderBottom: `1px solid ${phase.color ? `${phase.color}30` : 'var(--line)'}`, 
+                        fontSize: '0.85rem', color: 'var(--text)', opacity: 0.9 
+                      }}>
+                        {phase.description}
+                      </div>
+                    )}
+                    
+                    {phasePending.length > 0 && (
+                      <div>
+                        {phasePending.map(task => (
+                          <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isDoneToday={false}
+                            onToggle={toggleTaskDoneForToday}
+                            onEdit={setEditingTask}
+                            dense={denseMode} />
+                        ))}
+                      </div>
+                    )}
+
+                    {phaseDone.length > 0 && (
+                      <div>
+                        <div style={{
+                          padding: '8px 18px', fontSize: '0.68rem', fontWeight: 800,
+                          textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)',
+                          borderTop: phasePending.length > 0 ? '1px solid var(--line)' : 'none',
+                          background: 'var(--panel)',
+                          display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.8
+                        }}>
+                          <CheckCircle2 size={12} /> Done
+                        </div>
+                        {phaseDone.map(task => (
+                          <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isDoneToday={true}
+                            onToggle={toggleTaskDoneForToday}
+                            onEdit={setEditingTask}
+                            dense={denseMode} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {(() => {
+                const noPhasePending = pendingTasks.filter(t => !selectedGoal.roadmap.phases.some(p => p.id === t.phaseId || p.tasks?.some(pt => pt.id === t.id)));
+                const noPhaseDone = doneTasks.filter(t => !selectedGoal.roadmap.phases.some(p => p.id === t.phaseId || p.tasks?.some(pt => pt.id === t.id)));
+
+                if (noPhasePending.length === 0 && noPhaseDone.length === 0) return null;
+
+                return (
+                  <div className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--line)' }}>
+                    <div style={{ padding: '12px 18px', background: 'var(--bg-2)', borderBottom: '1px solid var(--line)', fontSize: '0.75rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      Other Tasks
+                    </div>
+                    {noPhasePending.length > 0 && (
+                      <div>
+                        {noPhasePending.map(task => (
+                          <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isDoneToday={false}
+                            onToggle={toggleTaskDoneForToday}
+                            onEdit={setEditingTask}
+                            dense={denseMode} />
+                        ))}
+                      </div>
+                    )}
+                    {noPhaseDone.length > 0 && (
+                      <div>
+                        <div style={{ padding: '8px 18px', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', borderTop: noPhasePending.length > 0 ? '1px solid var(--line)' : 'none', background: 'var(--panel)', display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.8 }}>
+                          <CheckCircle2 size={12} /> Done
+                        </div>
+                        {noPhaseDone.map(task => (
+                          <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isDoneToday={true}
+                            onToggle={toggleTaskDoneForToday}
+                            onEdit={setEditingTask}
+                            dense={denseMode} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--line)' }}>
@@ -810,6 +965,7 @@ function GoalsPage({
             toggleSpecificDayHandler={idx => toggleSpecificDay(selectedGoal.id, idx)}
             weekDays={weekDays}
             onCancel={() => setIsTaskModalOpen(false)}
+            phases={selectedGoal?.roadmap?.phases || []}
             isEdit={false}
           />
         </ModalOverlay>
@@ -830,8 +986,48 @@ function GoalsPage({
             }}
             weekDays={weekDays}
             onCancel={() => setEditingTask(null)}
+            phases={selectedGoal?.roadmap?.phases || []}
             isEdit
           />
+        </ModalOverlay>
+      )}
+
+      {isPhaseModalOpen && (
+        <ModalOverlay onClose={() => setIsPhaseModalOpen(false)}>
+          <form onSubmit={handleAddPhase} style={{ display: 'grid', gap: '16px', width: 'min(100%, 400px)', margin: '0 auto' }}>
+            <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Create New Phase</h3>
+            <input
+              type="text"
+              placeholder="Phase Name (e.g. Planning)"
+              value={newPhaseName}
+              onChange={e => setNewPhaseName(e.target.value)}
+              required
+              autoFocus
+              style={{ fontSize: '1rem', padding: '12px', borderRadius: '10px' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <label style={{ fontSize: '0.9rem', color: 'var(--muted)' }}>Color focus:</label>
+              {['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#f43f5e'].map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setNewPhaseColor(color)}
+                  style={{
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    background: color,
+                    border: newPhaseColor === color ? '3px solid var(--panel)' : 'none',
+                    outline: newPhaseColor === color ? `2px solid ${color}` : 'none',
+                    cursor: 'pointer'
+                  }}
+                  aria-label={`Select color ${color}`}
+                />
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button type="button" className="ghost-btn" onClick={() => setIsPhaseModalOpen(false)}>Cancel</button>
+              <button type="submit" className="primary-btn" style={{ padding: '8px 16px' }}>Save Phase</button>
+            </div>
+          </form>
         </ModalOverlay>
       )}
 

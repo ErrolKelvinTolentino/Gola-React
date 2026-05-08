@@ -146,6 +146,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       deadline: form.deadline,
       timeEstimate: form.timeEstimate,
       energy: form.energy,
+      phaseId: form.phaseId || undefined,
       completed: false,
       completedDates: []
     };
@@ -200,6 +201,39 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
   const toggleSetting = (key) => {
     setSettings((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const addPhaseToGoal = (goalId, phase) => {
+    setGoals(current => current.map(g => {
+      if (g.id !== goalId) return g;
+      const currentRoadmap = g.roadmap || { phases: [] };
+      return {
+        ...g,
+        roadmap: {
+          ...currentRoadmap,
+          phases: [...(currentRoadmap.phases || []), phase]
+        }
+      };
+    }));
+  };
+
+  const movePhase = (goalId, phaseIndex, direction) => {
+    setGoals(current => current.map(g => {
+      if (g.id !== goalId || !g.roadmap?.phases) return g;
+      const newPhases = [...g.roadmap.phases];
+      if (direction === 'up' && phaseIndex > 0) {
+        [newPhases[phaseIndex - 1], newPhases[phaseIndex]] = [newPhases[phaseIndex], newPhases[phaseIndex - 1]];
+      } else if (direction === 'down' && phaseIndex < newPhases.length - 1) {
+        [newPhases[phaseIndex + 1], newPhases[phaseIndex]] = [newPhases[phaseIndex], newPhases[phaseIndex + 1]];
+      }
+      return {
+        ...g,
+        roadmap: {
+          ...g.roadmap,
+          phases: newPhases
+        }
+      };
+    }));
   };
 
   const updateTask = (goalId, taskId, payload) => {
@@ -266,6 +300,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           addGoal={addGoal}
           theme={theme}
           updateTask={updateTask}
+          addPhaseToGoal={addPhaseToGoal}
+          movePhase={movePhase}
           completeGoal={completeGoal}
         />
       );
@@ -314,6 +350,12 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         completedToday={completedToday}
         selectedGoal={selectedGoal}
         today={today}
+        activeTasksToday={activeTasksToday}
+        goals={goals}
+        aiEnabled={false}
+        onNavigate={(page) => setActivePage(page)}
+        onStartFocus={(taskId, goalId) => setActivePage('Focus')}
+        onStartTask={() => setActivePage('Focus')}
       />
     );
   };

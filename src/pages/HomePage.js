@@ -10,7 +10,8 @@ function HomePage({
   goalsCount, allTaskCount, activeTasksCount, completionRate, completedToday, 
   selectedGoal, today, streak, focusMinutesToday, activeTasksToday, goals, aiEnabled,
   onNavigate,
-  onStartFocus
+  onStartFocus,
+  onStartTask
 }) {
   const [greeting, setGreeting] = useState('');
   const [timeOfDay, setTimeOfDay] = useState('morning');
@@ -156,6 +157,7 @@ function HomePage({
         completionRate={completionRate}
         streak={streak || 0}
         aiEnabled={aiEnabled}
+        onStartTask={onStartTask}
       />
 
       {/* ═══════════════════════════════════════════════════════════

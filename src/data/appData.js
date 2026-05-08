@@ -13,7 +13,8 @@ export const DEFAULT_TASK_FORM = {
   specificDays: [1, 3, 5],
   deadline: '',
   timeEstimate: '30m',
-  energy: 'Medium'
+  energy: 'Medium',
+  phaseId: ''
 };
 
 export const DEFAULT_SETTINGS = {
