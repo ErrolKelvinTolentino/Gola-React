@@ -131,6 +131,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       timeEstimate: form.timeEstimate,
       energy: form.energy,
       phaseId: form.phaseId || undefined,
+      progressMinutes: 0,
+      order: createUniqueId(),
       completed: false,
       completedDates: []
     };
@@ -245,6 +247,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           isTaskActiveOnDate={isTaskActiveOnDate}
           isTaskDoneForDate={isTaskDoneForDate}
           toggleTaskDoneForDate={toggleTaskDoneForDate}
+          updateTask={updateTask}
           getRecurrenceText={recurrenceText}
           prettyDate={prettyDate}
         />

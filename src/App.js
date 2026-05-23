@@ -24,6 +24,7 @@ import {
   isTaskDoneForDate,
   prettyDate
 } from './utils/dateUtils';
+import { getNextMidnight, getYesterday, rolloverIncompleteTasks } from './utils/taskRollover';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from './firebase/config';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -38,6 +39,7 @@ const STORAGE_SUFFIXES = {
 };
 
 const LEGACY_SHARED_STATE_KEYS = ['gola.goals', 'gola.focusSessions', 'gola.streak', 'gola.aiEnabled'];
+const getRolloverStorageKey = (uid) => (uid ? `gola.${uid}.rollover.last` : 'gola.rollover.last');
 
 const getUserScopedStorageKey = (uid, suffix) => {
   if (!uid) return null;
@@ -265,6 +267,41 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     user?.uid
   ]);
 
+  // ── Rollover incomplete tasks at midnight ───────────────────────
+  useEffect(() => {
+    const rolloverKey = getRolloverStorageKey(user?.uid);
+    const todayKeyLocal = getDateKey(new Date());
+    const lastRollover = localStorage.getItem(rolloverKey);
+
+    if (lastRollover !== todayKeyLocal) {
+      const yesterday = getYesterday(new Date());
+      const rollover = rolloverIncompleteTasks(goals, yesterday, new Date());
+      if (rollover.didUpdate) {
+        setGoals(rollover.goals);
+        persistGoals(rollover.goals);
+      }
+      localStorage.setItem(rolloverKey, todayKeyLocal);
+    }
+
+    const nextMidnight = getNextMidnight(new Date());
+    const timeoutMs = nextMidnight.getTime() - Date.now();
+    if (timeoutMs <= 0) return () => {};
+
+    const timeout = setTimeout(() => {
+      const fromDate = new Date();
+      const toDate = new Date();
+      toDate.setDate(toDate.getDate() + 1);
+      const rollover = rolloverIncompleteTasks(goals, fromDate, toDate);
+      if (rollover.didUpdate) {
+        setGoals(rollover.goals);
+        persistGoals(rollover.goals);
+      }
+      localStorage.setItem(rolloverKey, getDateKey(toDate));
+    }, timeoutMs);
+
+    return () => clearTimeout(timeout);
+  }, [goals, persistGoals, user?.uid]);
+
   const today = new Date();
   const todayKey = getDateKey(today);
 
@@ -384,6 +421,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       timeEstimate: form.timeEstimate,
       energy: form.energy,
       phaseId: form.phaseId || undefined,
+      progressMinutes: 0,
+      order: Date.now(),
       completed: false,
       completedDates: []
     };
@@ -563,12 +602,22 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
     // Increment focus minutes on the goal
     if (goalId) {
-      setGoals(current => current.map(g => {
-        if (g.id !== goalId) return g;
-        return { ...g, focusMinutes: (g.focusMinutes || 0) + duration };
-      }));
+      setGoals((current) => {
+        const nextGoals = current.map((g) => {
+          if (g.id !== goalId) return g;
+          const nextTasks = g.tasks.map((task) => {
+            if (task.id !== taskId) return task;
+            const nextProgress = (task.progressMinutes || 0) + duration;
+            return { ...task, progressMinutes: nextProgress, updatedAt: new Date().toISOString() };
+          });
+          const nextGoal = { ...g, tasks: nextTasks, focusMinutes: (g.focusMinutes || 0) + duration };
+          return nextGoal;
+        });
+        persistGoals(nextGoals);
+        return nextGoals;
+      });
     }
-  }, [todayKey]);
+  }, [persistGoals, todayKey]);
 
   // ── Weekly review adjustment ─────────────────────────────────────
   const adjustGoal = useCallback((goalId, adjustmentType, assessment) => {
@@ -618,6 +667,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           isTaskDoneForDate={isTaskDoneForDate}
           toggleTaskDoneForDate={toggleTaskDoneForDate}
           toggleTaskDoneForToday={toggleTaskDoneForToday}
+          updateTask={updateTask}
           getRecurrenceText={recurrenceText}
           prettyDate={prettyDate}
           streak={streak}
@@ -715,6 +765,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         isTaskDoneForDate={isTaskDoneForDate}
         toggleTaskDoneForDate={toggleTaskDoneForDate}
         toggleTaskDoneForToday={toggleTaskDoneForToday}
+        updateTask={updateTask}
         getRecurrenceText={recurrenceText}
         prettyDate={prettyDate}
         streak={streak}

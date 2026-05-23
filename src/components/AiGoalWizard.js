@@ -115,6 +115,8 @@ function buildRoadmap(goalName, goalVision, deadline, notes, responses) {
     specificDays: opts.specificDays ?? [],
     timeEstimate: opts.timeEstimate ?? '30m',
     energy: opts.energy ?? 'Medium',
+    progressMinutes: 0,
+    order: uid(),
     completed: false,
     completedDates: []
   });

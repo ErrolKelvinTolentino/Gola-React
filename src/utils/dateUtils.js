@@ -24,6 +24,13 @@ export function isTaskActiveOnDate(task, date) {
   const dateKey = getDateKey(date);
   const weekDay = new Date(`${dateKey}T00:00:00`).getDay();
 
+  if (Array.isArray(task.postponedDates)) {
+    const override = task.postponedDates.find((entry) => entry?.to === dateKey);
+    if (override) return true;
+    const skipped = task.postponedDates.find((entry) => entry?.from === dateKey);
+    if (skipped) return false;
+  }
+
   if (task.recurrenceType === 'daily') return true;
   if (task.recurrenceType === 'weekly') return Number(task.weeklyDay) === weekDay;
   if (task.recurrenceType === 'specific-days') return task.specificDays.includes(weekDay);

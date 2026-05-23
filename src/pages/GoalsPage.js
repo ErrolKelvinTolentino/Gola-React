@@ -570,6 +570,8 @@ function GoalsPage({
                           deadline: task.deadline || '',
                           timeEstimate: task.timeEstimate || '30m',
                           energy: task.energy || 'Medium',
+                          progressMinutes: 0,
+                          order: index,
                           completed: false,
                           completedDates: []
                         }));

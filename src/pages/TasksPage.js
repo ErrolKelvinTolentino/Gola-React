@@ -9,9 +9,12 @@ import {
   BarChart3,
   Zap,
 } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { addDays, getDateKey, isTaskActiveOnDate as isTaskActiveOnDateUtil } from '../utils/dateUtils';
 import MorningBriefing from '../components/MorningBriefing';
 import QuotesBanner from '../components/QuotesBanner';
+import CapacityWarning from '../components/CapacityWarning';
+import { getRecommendedTask } from '../services/recommendationEngine';
 
 /* ─── Mini SVG ring for day-cell progress ─────────────────────── */
 function RingProgress({ pct = 0, size = 32, stroke = 3, isEmpty = false }) {
@@ -75,6 +78,16 @@ function TaskDots({ count = 0, done = 0 }) {
 
 /* ─────────────────────────────────────────────────────────────────── */
 
+function parseTimeEstimate(value) {
+  if (!value) return 30;
+  if (value === '15m') return 15;
+  if (value === '30m') return 30;
+  if (value === '1h') return 60;
+  if (value === '2h+') return 120;
+  const asNumber = Number.parseInt(value, 10);
+  return Number.isFinite(asNumber) ? asNumber : 30;
+}
+
 function TasksPage({
   goals = [],
   activeTasksToday = [],
@@ -84,6 +97,7 @@ function TasksPage({
   isTaskDoneForDate,
   toggleTaskDoneForDate,
   toggleTaskDoneForToday,
+  updateTask,
   getRecurrenceText,
   prettyDate,
   streak,
@@ -95,6 +109,8 @@ function TasksPage({
   const todayKey = getDateKey(today);
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
   const safeIsTaskActiveOnDate = isTaskActiveOnDate || isTaskActiveOnDateUtil;
+  const [postponeTarget, setPostponeTarget] = useState(null);
+  const [postponeValue, setPostponeValue] = useState('');
 
   const scrollRef = useRef(null);
   const cellRefs = useRef({});
@@ -184,6 +200,28 @@ function TasksPage({
     year: 'numeric',
   });
 
+  const orderedPendingTasks = useMemo(() => {
+    return [...pendingTasks]
+      .map((item, index) => ({ ...item, _order: item.task.order ?? index }))
+      .sort((a, b) => a._order - b._order);
+  }, [pendingTasks]);
+
+  const recommendedTask = useMemo(() => {
+    const taskPool = orderedPendingTasks.map(({ task, goalId, goalName }) => ({
+      ...task,
+      goalId,
+      goalName
+    }));
+    return getRecommendedTask(taskPool, 'Medium', new Date().getHours());
+  }, [orderedPendingTasks]);
+
+  const capacityMinutes = 240;
+  const usedMinutes = tasksForSelectedDay.reduce(
+    (sum, item) => sum + parseTimeEstimate(item.task.timeEstimate),
+    0
+  );
+  const capacityPercent = Math.min(100, Math.round((usedMinutes / capacityMinutes) * 100));
+
   // ── Keyboard / button navigation ────────────────────────────────
   const shiftDate = useCallback(
     (direction) => {
@@ -219,6 +257,45 @@ function TasksPage({
     if (typeof toggleTaskDoneForToday === 'function') {
       toggleTaskDoneForToday(goalId, taskId);
     }
+  };
+
+  const handlePostpone = (goalId, task, newDateKey) => {
+    if (!newDateKey || !updateTask) return;
+    const fromKey = selectedDateKey;
+    const postponedDates = Array.isArray(task.postponedDates) ? [...task.postponedDates] : [];
+    postponedDates.push({ from: fromKey, to: newDateKey });
+
+    const updates = {
+      postponedDates,
+      completedDates: (task.completedDates || []).filter((dateKey) => dateKey !== fromKey),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (task.recurrenceType === 'one-time') {
+      updates.oneTimeDate = newDateKey;
+      updates.completed = false;
+    }
+
+    updateTask(goalId, task.id, updates);
+    setPostponeTarget(null);
+    setPostponeValue('');
+  };
+
+  const handleDragEnd = (result) => {
+    if (!result?.destination) return;
+    const fromIndex = result.source.index;
+    const toIndex = result.destination.index;
+    if (fromIndex === toIndex) return;
+
+    const reordered = Array.from(orderedPendingTasks);
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    reordered.forEach((item, index) => {
+      if (item.task.order !== index) {
+        updateTask(item.goalId, item.task.id, { order: index });
+      }
+    });
   };
 
   const isToday = selectedDateKey === todayKey;
@@ -277,6 +354,31 @@ function TasksPage({
         streak={streak || 0}
         aiEnabled={aiEnabled}
       />
+
+      {recommendedTask && (
+        <div className="card premium-surface" style={{ padding: '16px', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+            <div>
+              <div style={{ fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
+                Recommended Next Task
+              </div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text)' }}>
+                {recommendedTask.title}
+              </div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                {recommendedTask.goalName}
+              </div>
+            </div>
+            <button
+              className="primary-btn"
+              onClick={() => onStartFocus(recommendedTask.id, recommendedTask.goalId)}
+              style={{ padding: '6px 12px', fontSize: '0.78rem', fontWeight: 700, borderRadius: '8px' }}
+            >
+              Focus <Zap size={12} style={{ marginLeft: '4px' }} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Horizontal Calendar Card ────────────────────────────── */}
       <div
@@ -595,6 +697,27 @@ function TasksPage({
         ))}
       </div>
 
+      <div className="card premium-surface" style={{ padding: '14px 16px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>Today vs Capacity</div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
+            {usedMinutes}/{capacityMinutes} min
+          </div>
+        </div>
+        <div style={{ height: '8px', borderRadius: '999px', background: 'var(--line)', overflow: 'hidden' }}>
+          <div
+            style={{
+              height: '100%',
+              width: `${capacityPercent}%`,
+              background: capacityPercent >= 100 ? '#ef4444' : 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+              transition: 'width 0.3s ease'
+            }}
+          />
+        </div>
+      </div>
+
+      <CapacityWarning tasks={tasksForSelectedDay.map((item) => item.task)} userCapacity={capacityMinutes} />
+
       {/* ── Task list ──────────────────────────────────────────────── */}
       {tasksForSelectedDay.length === 0 ? (
         <div
@@ -619,7 +742,7 @@ function TasksPage({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           {/* PENDING */}
-          {pendingTasks.length > 0 && (
+          {orderedPendingTasks.length > 0 && (
             <div>
               <h3
                 style={{
@@ -646,72 +769,116 @@ function TasksPage({
                 </span>
               </h3>
               <div className="card premium-surface" style={{ padding: '0', overflow: 'hidden' }}>
-                <ul className="task-list interactive" style={{ gap: '0' }}>
-                  {pendingTasks.map(({ goalId, goalName, task }, idx) => (
-                    <li
-                      key={`${goalId}-${task.id}`}
-                      style={{
-                        border: 'none',
-                        borderBottom:
-                          idx === pendingTasks.length - 1 ? 'none' : '1px solid var(--line)',
-                        borderRadius: '0',
-                        padding: '18px 22px',
-                        background: 'transparent',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                        <label
-                          style={{
-                            fontSize: '1rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'flex-start',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                            <input
-                              type="checkbox"
-                              checked={false}
-                              onChange={() => handleToggleTaskDone(goalId, task.id)}
-                              style={{ width: '22px', height: '22px', marginRight: '8px', marginTop: '2px' }}
-                            />
-                            <span style={{ fontWeight: 600, lineHeight: 1.4 }}>{task.title}</span>
-                          </div>
-                          {task.description && (
-                            <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>
-                              {task.description}
-                            </div>
-                          )}
-                        </label>
-                        <button 
-                          className="primary-btn" 
-                          onClick={() => onStartFocus(task.id, goalId)}
-                          style={{ padding: '6px 12px', fontSize: '0.75rem', minHeight: '0', borderRadius: '8px', flexShrink: 0, fontWeight: 700 }}
-                        >
-                          Focus <Zap size={12} style={{ marginLeft: '4px' }} />
-                        </button>
-                      </div>
-                      <div className="task-meta" style={{ marginTop: '8px', paddingLeft: '30px' }}>
-                        <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Target size={13} /> {goalName}
-                        </small>
-                        <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <RotateCw size={13} /> {getRecurrenceText(task)}
-                        </small>
-                        {task.timeEstimate && (
-                          <span className="meta-chip">⏱ {task.timeEstimate}</span>
-                        )}
-                        {task.energy && <span className="meta-chip">⚡ {task.energy}</span>}
-                        {task.deadline && (
-                          <span className="meta-chip highlight">
-                            <CalendarIcon size={11} /> {prettyDate(task.deadline)}
-                          </span>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <DragDropContext onDragEnd={handleDragEnd}>
+                  <Droppable droppableId="pending-tasks">
+                    {(provided) => (
+                      <ul
+                        className="task-list interactive"
+                        style={{ gap: '0' }}
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                      >
+                        {orderedPendingTasks.map(({ goalId, goalName, task }, idx) => (
+                          <Draggable key={`${goalId}-${task.id}`} draggableId={`${goalId}-${task.id}`} index={idx}>
+                            {(dragProvided) => (
+                              <li
+                                ref={dragProvided.innerRef}
+                                {...dragProvided.draggableProps}
+                                {...dragProvided.dragHandleProps}
+                                style={{
+                                  border: 'none',
+                                  borderBottom:
+                                    idx === orderedPendingTasks.length - 1 ? 'none' : '1px solid var(--line)',
+                                  borderRadius: '0',
+                                  padding: '18px 22px',
+                                  background: 'transparent',
+                                  ...dragProvided.draggableProps.style,
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                                  <label
+                                    style={{
+                                      fontSize: '1rem',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'flex-start',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isTaskDoneForDate(task, selectedDate)}
+                                        onChange={() => handleToggleTaskDone(goalId, task.id)}
+                                        style={{ width: '22px', height: '22px', marginRight: '8px', marginTop: '2px' }}
+                                      />
+                                      <span style={{ fontWeight: 600, lineHeight: 1.4 }}>{task.title}</span>
+                                    </div>
+                                    {task.description && (
+                                      <div style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>
+                                        {task.description}
+                                      </div>
+                                    )}
+                                  </label>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+                                    <button
+                                      className="primary-btn"
+                                      onClick={() => onStartFocus(task.id, goalId)}
+                                      style={{ padding: '6px 12px', fontSize: '0.75rem', minHeight: '0', borderRadius: '8px', flexShrink: 0, fontWeight: 700 }}
+                                    >
+                                      Focus <Zap size={12} style={{ marginLeft: '4px' }} />
+                                    </button>
+                                    <button
+                                      className="ghost-btn"
+                                      onClick={() => {
+                                        setPostponeTarget(`${goalId}-${task.id}`);
+                                        setPostponeValue('');
+                                      }}
+                                      style={{ padding: '6px 10px', fontSize: '0.7rem' }}
+                                    >
+                                      Postpone
+                                    </button>
+                                    {postponeTarget === `${goalId}-${task.id}` && (
+                                      <input
+                                        type="date"
+                                        value={postponeValue}
+                                        min={getDateKey(addDays(selectedDate, 1))}
+                                        onChange={(e) => {
+                                          const nextValue = e.target.value;
+                                          setPostponeValue(nextValue);
+                                          if (nextValue) handlePostpone(goalId, task, nextValue);
+                                        }}
+                                        style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '0.75rem' }}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="task-meta" style={{ marginTop: '8px', paddingLeft: '30px' }}>
+                                  <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <Target size={13} /> {goalName}
+                                  </small>
+                                  <small style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <RotateCw size={13} /> {getRecurrenceText(task)}
+                                  </small>
+                                  {task.timeEstimate && (
+                                    <span className="meta-chip">⏱ {task.timeEstimate}</span>
+                                  )}
+                                  {task.energy && <span className="meta-chip">⚡ {task.energy}</span>}
+                                  {task.deadline && (
+                                    <span className="meta-chip highlight">
+                                      <CalendarIcon size={11} /> {prettyDate(task.deadline)}
+                                    </span>
+                                  )}
+                                </div>
+                              </li>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </ul>
+                    )}
+                  </Droppable>
+                </DragDropContext>
               </div>
             </div>
           )}

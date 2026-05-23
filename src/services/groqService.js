@@ -562,7 +562,7 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
 
   const phases = (aiResponse.phases || []).map((phase, phaseIdx) => {
     const phaseId = `p${phaseIdx + 1}`;
-    const tasks = (phase.tasks || []).map(task => ({
+    const tasks = (phase.tasks || []).map((task, taskIdx) => ({
       id: uid(),
       title: task.title || 'Untitled task',
       description: safeString(task.description, ''),
@@ -573,6 +573,8 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
       specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
       timeEstimate: validTimeEstimates.includes(task.timeEstimate) ? task.timeEstimate : '30m',
       energy: validEnergies.includes(task.energy) ? task.energy : 'Medium',
+      progressMinutes: 0,
+      order: taskIdx,
       phaseId,
       completed: false,
       completedDates: []
