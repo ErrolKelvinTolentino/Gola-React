@@ -180,7 +180,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
             if (task.id !== taskId) return task;
 
             if (task.recurrenceType === 'one-time') {
-              return { ...task, completed: !task.completed };
+              return { ...task, completed: !task.completed, updatedAt: new Date().toISOString() };
             }
 
             const alreadyDone = task.completedDates.includes(dateKey);
@@ -188,7 +188,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
               ? task.completedDates.filter((item) => item !== dateKey)
               : [...task.completedDates, dateKey];
 
-            return { ...task, completedDates: nextDates };
+            return { ...task, completedDates: nextDates, updatedAt: new Date().toISOString() };
           })
         };
       })
@@ -212,7 +212,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         roadmap: {
           ...currentRoadmap,
           phases: [...(currentRoadmap.phases || []), phase]
-        }
+        },
+        updatedAt: new Date().toISOString()
       };
     }));
   };
@@ -231,25 +232,29 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         roadmap: {
           ...g.roadmap,
           phases: newPhases
-        }
+        },
+        updatedAt: new Date().toISOString()
       };
     }));
   };
 
   const updateTask = (goalId, taskId, payload) => {
+    const updatedAt = payload?.updatedAt || new Date().toISOString();
     setGoals(current => current.map(g => {
       if (g.id !== goalId) return g;
       return {
         ...g,
-        tasks: g.tasks.map(t => t.id === taskId ? { ...t, ...payload } : t)
+        tasks: g.tasks.map(t => t.id === taskId ? { ...t, ...payload, updatedAt } : t),
+        updatedAt
       };
     }));
   };
 
   const completeGoal = (goalId, assessment) => {
+    const completedAt = new Date().toISOString();
     setGoals(current => current.map(g => {
       if (g.id !== goalId) return g;
-      return { ...g, status: 'completed', assessment };
+      return { ...g, status: 'completed', assessment, completedAt, updatedAt: completedAt };
     }));
   };
 

@@ -281,6 +281,34 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       }))
   );
 
+  const getActiveTasksForDate = useCallback(
+    (date) =>
+      goals.flatMap((goal) =>
+        goal.tasks
+          .filter((task) => isTaskActiveOnDate(task, date))
+          .map((task) => ({ goalId: goal.id, goalName: goal.name, task }))
+      ),
+    [goals]
+  );
+
+  const persistGoals = useCallback(
+    (nextGoals) => {
+      if (!user?.uid || !hasHydratedCloud.current) return;
+      const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
+      setDoc(
+        appStateRef,
+        {
+          goals: nextGoals,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch((error) => {
+        console.warn('Failed to sync goals to Firestore:', error);
+      });
+    },
+    [user?.uid]
+  );
+
   const completedToday = activeTasksToday.filter(({ task }) => isTaskDoneForDate(task, today)).length;
   const completionRate = activeTasksToday.length
     ? Math.round((completedToday / activeTasksToday.length) * 100)
@@ -425,11 +453,11 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     }
   }, [todayKey, lastActiveDate, streak, today]);
 
-  const toggleTaskDoneForToday = (goalId, taskId) => {
-    const dateKey = todayKey;
+  const toggleTaskDoneForDate = (goalId, taskId, dateInput) => {
+    const dateKey = getDateKey(dateInput || today);
 
-    setGoals((currentGoals) =>
-      currentGoals.map((goal) => {
+    setGoals((currentGoals) => {
+      const nextGoals = currentGoals.map((goal) => {
         if (goal.id !== goalId) return goal;
 
         return {
@@ -438,7 +466,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
             if (task.id !== taskId) return task;
 
             if (task.recurrenceType === 'one-time') {
-              return { ...task, completed: !task.completed };
+              return { ...task, completed: !task.completed, updatedAt: new Date().toISOString() };
             }
 
             const alreadyDone = task.completedDates.includes(dateKey);
@@ -446,14 +474,22 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
               ? task.completedDates.filter((item) => item !== dateKey)
               : [...task.completedDates, dateKey];
 
-            return { ...task, completedDates: nextDates };
+            return { ...task, completedDates: nextDates, updatedAt: new Date().toISOString() };
           })
         };
-      })
-    );
+      });
 
-    // Update streak when marking a task as done
-    updateStreak();
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
+
+    if (dateKey === todayKey) {
+      updateStreak();
+    }
+  };
+
+  const toggleTaskDoneForToday = (goalId, taskId) => {
+    toggleTaskDoneForDate(goalId, taskId, today);
   };
 
   const toggleSetting = (key) => {
@@ -461,53 +497,78 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   };
 
   const addPhaseToGoal = (goalId, phase) => {
-    setGoals(current => current.map(g => {
-      if (g.id !== goalId) return g;
-      const currentRoadmap = g.roadmap || { phases: [] };
-      return {
-        ...g,
-        roadmap: {
-          ...currentRoadmap,
-          phases: [...(currentRoadmap.phases || []), phase]
-        }
-      };
-    }));
+    setGoals(current => {
+      const nextGoals = current.map(g => {
+        if (g.id !== goalId) return g;
+        const currentRoadmap = g.roadmap || { phases: [] };
+        return {
+          ...g,
+          roadmap: {
+            ...currentRoadmap,
+            phases: [...(currentRoadmap.phases || []), phase]
+          },
+          updatedAt: new Date().toISOString()
+        };
+      });
+
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
   };
 
   const movePhase = (goalId, phaseIndex, direction) => {
-    setGoals(current => current.map(g => {
-      if (g.id !== goalId || !g.roadmap?.phases) return g;
-      const newPhases = [...g.roadmap.phases];
-      if (direction === 'up' && phaseIndex > 0) {
-        [newPhases[phaseIndex - 1], newPhases[phaseIndex]] = [newPhases[phaseIndex], newPhases[phaseIndex - 1]];
-      } else if (direction === 'down' && phaseIndex < newPhases.length - 1) {
-        [newPhases[phaseIndex + 1], newPhases[phaseIndex]] = [newPhases[phaseIndex], newPhases[phaseIndex + 1]];
-      }
-      return {
-        ...g,
-        roadmap: {
-          ...g.roadmap,
-          phases: newPhases
+    setGoals(current => {
+      const nextGoals = current.map(g => {
+        if (g.id !== goalId || !g.roadmap?.phases) return g;
+        const newPhases = [...g.roadmap.phases];
+        if (direction === 'up' && phaseIndex > 0) {
+          [newPhases[phaseIndex - 1], newPhases[phaseIndex]] = [newPhases[phaseIndex], newPhases[phaseIndex - 1]];
+        } else if (direction === 'down' && phaseIndex < newPhases.length - 1) {
+          [newPhases[phaseIndex + 1], newPhases[phaseIndex]] = [newPhases[phaseIndex], newPhases[phaseIndex + 1]];
         }
-      };
-    }));
+        return {
+          ...g,
+          roadmap: {
+            ...g.roadmap,
+            phases: newPhases
+          },
+          updatedAt: new Date().toISOString()
+        };
+      });
+
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
   };
 
   const updateTask = (goalId, taskId, payload) => {
-    setGoals(current => current.map(g => {
-      if (g.id !== goalId) return g;
-      return {
-        ...g,
-        tasks: g.tasks.map(t => t.id === taskId ? { ...t, ...payload } : t)
-      };
-    }));
+    const updatedAt = payload?.updatedAt || new Date().toISOString();
+    setGoals(current => {
+      const nextGoals = current.map(g => {
+        if (g.id !== goalId) return g;
+        return {
+          ...g,
+          tasks: g.tasks.map(t => t.id === taskId ? { ...t, ...payload, updatedAt } : t),
+          updatedAt
+        };
+      });
+
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
   };
 
   const completeGoal = (goalId, assessment) => {
-    setGoals(current => current.map(g => {
-      if (g.id !== goalId) return g;
-      return { ...g, status: 'completed', assessment };
-    }));
+    const completedAt = new Date().toISOString();
+    setGoals(current => {
+      const nextGoals = current.map(g => {
+        if (g.id !== goalId) return g;
+        return { ...g, status: 'completed', assessment, completedAt, updatedAt: completedAt };
+      });
+
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
   };
 
   // ── Focus session logging ────────────────────────────────────────
@@ -574,8 +635,10 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           goals={goals}
           activeTasksToday={activeTasksToday}
           today={today}
+          getActiveTasksForDate={getActiveTasksForDate}
           isTaskActiveOnDate={isTaskActiveOnDate}
           isTaskDoneForDate={isTaskDoneForDate}
+          toggleTaskDoneForDate={toggleTaskDoneForDate}
           toggleTaskDoneForToday={toggleTaskDoneForToday}
           getRecurrenceText={recurrenceText}
           prettyDate={prettyDate}
@@ -668,12 +731,14 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
     // Default: Today
     return (
-      <TasksPage
+        <TasksPage
         goals={goals}
         activeTasksToday={activeTasksToday}
         today={today}
+        getActiveTasksForDate={getActiveTasksForDate}
         isTaskActiveOnDate={isTaskActiveOnDate}
         isTaskDoneForDate={isTaskDoneForDate}
+        toggleTaskDoneForDate={toggleTaskDoneForDate}
         toggleTaskDoneForToday={toggleTaskDoneForToday}
         getRecurrenceText={recurrenceText}
         prettyDate={prettyDate}
