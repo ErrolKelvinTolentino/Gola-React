@@ -201,6 +201,38 @@ function buildRoadmap(goalName, goalVision, deadline, notes, responses) {
   return { summary, phases, allTasks, stats };
 }
 
+function limitRoadmapTasks(roadmap, limit = 5) {
+  if (!roadmap) return roadmap;
+  const allTasks = Array.isArray(roadmap.allTasks) ? roadmap.allTasks : [];
+  const limitedTasks = allTasks.slice(0, limit);
+  const limitedIds = new Set(limitedTasks.map((task) => task.id));
+  const limitedPhases = Array.isArray(roadmap.phases)
+    ? roadmap.phases
+        .map((phase) => ({
+          ...phase,
+          tasks: Array.isArray(phase.tasks)
+            ? phase.tasks.filter((task) => limitedIds.has(task.id))
+            : []
+        }))
+        .filter((phase) => phase.tasks.length > 0)
+    : [];
+
+  const limitedStats = {
+    totalTasks: limitedTasks.length,
+    oneTimeTasks: limitedTasks.filter((task) => task.recurrenceType === 'one-time').length,
+    dailyTasks: limitedTasks.filter((task) => task.recurrenceType === 'daily').length,
+    weeklyTasks: limitedTasks.filter((task) => task.recurrenceType === 'weekly').length,
+    phases: limitedPhases.length
+  };
+
+  return {
+    ...roadmap,
+    phases: limitedPhases,
+    allTasks: limitedTasks,
+    stats: limitedStats
+  };
+}
+
 /* ─────────────────────────────────────────────────────────────
    Visual helpers
 ───────────────────────────────────────────────────────────── */
@@ -208,6 +240,21 @@ const ENERGY_COLOR = { High: '#ec4899', Medium: '#8b5cf6', Low: '#3b82f6' };
 const RECUR_LABEL  = { 'one-time': 'One-time', daily: 'Daily', weekly: 'Weekly', 'specific-days': 'Select Days' };
 const RECUR_ICON   = { 'one-time': Calendar, daily: Flame, weekly: Repeat };
 const TIME_COLOR   = { '15m': '#10b981', '30m': '#3b82f6', '1h': '#8b5cf6', '2h+': '#ec4899' };
+
+const getFallbackQuestions = (goalName) => [
+  {
+    text: `To properly construct the roadmap for "${goalName || 'this target'}", how aggressive is your timeline based on your deadline?`,
+    options: ['Very aggressive (heavy daily workload)', 'Moderate & steady (balanced weekly tasks)', 'Long-term marathon (light, consistent steps)'],
+  },
+  {
+    text: 'What is the most likely bottleneck or challenge you\'ll face pursuing this goal?',
+    options: ['Time & Scheduling constraints', 'Knowledge or Skill gaps', 'Motivation & Energy', 'External dependencies / resources'],
+  },
+  {
+    text: 'How do you prefer to pace your execution workflows?',
+    options: ['Front-load the hardest tasks early', 'Evenly spread tiny daily habits', 'Work in weekly deep-focus bursts'],
+  },
+];
 
 function StatPill({ icon: Icon, value, label, color }) {
   return (
@@ -313,6 +360,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
   const [deadline, setDeadline] = useState('');
   const [notes, setNotes] = useState('');
   const [aiStatusMessage, setAiStatusMessage] = useState('');
+  const [isFetchingQuestion, setIsFetchingQuestion] = useState(false);
 
   const [questions, setQuestions]                 = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -330,12 +378,14 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
     setAiStatusMessage('');
     let cancelled = false;
 
+    const fallbackQuestions = getFallbackQuestions(goalName);
+
     const fetchQuestions = async () => {
       if (aiEnabled && isGroqAvailable()) {
         let aiQuestions = null;
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
-            aiQuestions = await generateClarifyingQuestions(goalName, goalVision, deadline, notes);
+            aiQuestions = await generateClarifyingQuestions(goalName, goalVision, deadline, notes, {}, []);
             if (aiQuestions?.questions?.length) break;
           } catch (error) {
             if (attempt === 1) {
@@ -353,20 +403,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
       }
 
       if (!cancelled) {
-        setQuestions([
-          {
-            text: `To properly construct the roadmap for "${goalName || 'this target'}", how aggressive is your timeline based on your deadline?`,
-            options: ['Very aggressive (heavy daily workload)', 'Moderate & steady (balanced weekly tasks)', 'Long-term marathon (light, consistent steps)'],
-          },
-          {
-            text: `What is the most likely bottleneck or challenge you'll face pursuing this goal?`,
-            options: ['Time & Scheduling constraints', 'Knowledge or Skill gaps', 'Motivation & Energy', 'External dependencies / resources'],
-          },
-          {
-            text: `How do you prefer to pace your execution workflows?`,
-            options: ['Front-load the hardest tasks early', 'Evenly spread tiny daily habits', 'Work in weekly deep-focus bursts'],
-          },
-        ]);
+        setQuestions(fallbackQuestions);
         setStep(4);
       }
     };
@@ -400,7 +437,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
 
         if (!cancelled && mapped) {
           setAiStatusMessage('');
-          setRoadmap(mapped);
+          setRoadmap(limitRoadmapTasks(mapped));
           setStep(6);
           return;
         }
@@ -414,7 +451,7 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
         } else if (!isGroqAvailable()) {
           setAiStatusMessage('Groq API key is missing or invalid in environment configuration.');
         }
-        setRoadmap(result);
+        setRoadmap(limitRoadmapTasks(result));
         setStep(6);
       }
     };
@@ -537,12 +574,51 @@ function AiGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onCanc
               if (currentQuestionIndex > 0) setCurrentQuestionIndex(i => i - 1);
               else setStep(2);
             }}>Back</button>
-            <button type="button" className="primary-btn" disabled={!responses[currentQuestionIndex]}
-              onClick={() => {
-                if (currentQuestionIndex < questions.length - 1) setCurrentQuestionIndex(i => i + 1);
-                else handleNext();
+            <button type="button" className="primary-btn" disabled={!responses[currentQuestionIndex] || isFetchingQuestion}
+              onClick={async () => {
+                if (currentQuestionIndex < questions.length - 1) {
+                  setCurrentQuestionIndex(i => i + 1);
+                  return;
+                }
+
+                if (questions.length < 3 && aiEnabled && isGroqAvailable()) {
+                  setIsFetchingQuestion(true);
+                  try {
+                    const aiQuestions = await generateClarifyingQuestions(
+                      goalName,
+                      goalVision,
+                      deadline,
+                      notes,
+                      responsesRef.current,
+                      questions.map((q) => q.text)
+                    );
+
+                    if (aiQuestions?.questions?.length) {
+                      setQuestions((prev) => [...prev, aiQuestions.questions[0]]);
+                      setCurrentQuestionIndex((i) => i + 1);
+                      setIsFetchingQuestion(false);
+                      return;
+                    }
+                  } catch (error) {
+                    console.warn('AI follow-up question failed, falling back:', error);
+                    setAiStatusMessage(`AI follow-up failed: ${error.message || 'unknown error'}`);
+                  }
+                  const fallbackQuestions = getFallbackQuestions(goalName);
+                  const remaining = fallbackQuestions.filter(
+                    (fallback) => !questions.some((existing) => existing.text === fallback.text)
+                  );
+                  if (remaining.length > 0) {
+                    setQuestions((prev) => [...prev, remaining[0]]);
+                    setCurrentQuestionIndex((i) => i + 1);
+                    setIsFetchingQuestion(false);
+                    return;
+                  }
+                  setIsFetchingQuestion(false);
+                }
+
+                handleNext();
               }}>
-              {currentQuestionIndex < questions.length - 1 ? 'Next Question' : 'Submit Responses'}
+              {currentQuestionIndex < questions.length - 1 || questions.length < 3 ? 'Next Question' : 'Submit Responses'}
             </button>
           </div>
         </div>

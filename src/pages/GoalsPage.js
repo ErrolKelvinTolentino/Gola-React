@@ -6,6 +6,8 @@ import {
   Flame, Zap, Clock, BarChart3, BookOpen, Star, ChevronRight,
   Filter, ArrowUpDown, GripVertical
 } from 'lucide-react';
+import { DEFAULT_TASK_FORM } from '../data/appData';
+import { GOAL_TEMPLATES } from '../data/goalTemplates';
 import { getGoalProgress, getDateKey } from '../utils/dateUtils';
 import AiGoalWizard from '../components/AiGoalWizard';
 
@@ -318,7 +320,7 @@ function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, d
 ═══════════════════════════════════════════════════════════════════ */
 function GoalsPage({
   goals, selectedGoal, selectedGoalId, setSelectedGoalId, allTaskCount,
-  getTaskForm, updateTaskForm, addTaskToGoal, toggleSpecificDay, weekDays,
+  addTaskToGoal, weekDays,
   isTaskActiveOnDate, isTaskDoneForDate, toggleTaskDoneForToday,
   getRecurrenceText, prettyDate, today,
   isGoalModalOpen, openGoalModal, closeGoalModal,
@@ -338,6 +340,30 @@ function GoalsPage({
   const [taskFilter, setTaskFilter] = useState('all');
   const [denseMode, setDenseMode] = useState(false);
   const [sortBy, setSortBy] = useState('default');
+  const [taskForm, setTaskForm] = useState(() => ({
+    ...DEFAULT_TASK_FORM,
+    specificDays: [...DEFAULT_TASK_FORM.specificDays],
+    oneTimeDate: getDateKey(new Date())
+  }));
+
+  const resetTaskForm = () => {
+    setTaskForm({
+      ...DEFAULT_TASK_FORM,
+      specificDays: [...DEFAULT_TASK_FORM.specificDays],
+      oneTimeDate: getDateKey(new Date())
+    });
+  };
+
+  const updateTaskForm = (payload) => {
+    setTaskForm((prev) => ({ ...prev, ...payload }));
+  };
+
+  const toggleSpecificDay = (idx) => {
+    const next = taskForm.specificDays.includes(idx)
+      ? taskForm.specificDays.filter((day) => day !== idx)
+      : [...taskForm.specificDays, idx];
+    updateTaskForm({ specificDays: next.sort((a, b) => a - b) });
+  };
 
   const handleAddPhase = (e) => {
     e.preventDefault();
@@ -498,6 +524,11 @@ function GoalsPage({
                   <strong style={{ fontSize: '1.05rem' }}>Create Manually</strong>
                   <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Define your goal and add tasks yourself.</span>
                 </button>
+                <button className="ghost-btn" onClick={() => setCreationMode('template')}
+                  style={{ padding: '20px', border: '2px solid var(--line)', borderRadius: '14px', textAlign: 'left', display: 'grid', gap: '4px' }}>
+                  <strong style={{ fontSize: '1.05rem' }}>Use a Template</strong>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Pick a proven goal setup and customize it.</span>
+                </button>
                 <button className="primary-btn" onClick={() => setCreationMode('ai')}
                   style={{ padding: '20px', display: 'grid', gap: '4px', textAlign: 'left', borderRadius: '14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -514,6 +545,56 @@ function GoalsPage({
                 onBack={() => setCreationMode(null)}
                 onSubmit={addGoal}
               />
+            ) : creationMode === 'template' ? (
+              <div style={{ display: 'grid', gap: '16px', maxWidth: '520px', margin: '0 auto' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: '1.3rem' }}>Choose a Template</h3>
+                  <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>Start with a proven goal layout.</p>
+                </div>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {GOAL_TEMPLATES.map((template) => (
+                    <button
+                      key={template.name}
+                      type="button"
+                      className="ghost-btn"
+                      style={{ padding: '16px', border: '2px solid var(--line)', borderRadius: '14px', textAlign: 'left', display: 'grid', gap: '6px' }}
+                      onClick={() => {
+                        const tasksWithIds = template.tasks.map((task, index) => ({
+                          id: Date.now() + index,
+                          title: task.title,
+                          description: task.description || '',
+                          recurrenceType: task.recurrenceType || 'one-time',
+                          oneTimeDate: task.oneTimeDate || getDateKey(new Date()),
+                          weeklyDay: Number.isInteger(task.weeklyDay) ? task.weeklyDay : 1,
+                          specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
+                          deadline: task.deadline || '',
+                          timeEstimate: task.timeEstimate || '30m',
+                          energy: task.energy || 'Medium',
+                          completed: false,
+                          completedDates: []
+                        }));
+
+                        setGoalName(template.name);
+                        setGoalVision(template.vision || '');
+                        addGoal({
+                          name: template.name,
+                          vision: template.vision || '',
+                          tasks: tasksWithIds,
+                          roadmapData: { source: 'template', templateName: template.name }
+                        });
+                        setCreationMode(null);
+                      }}
+                    >
+                      <strong style={{ fontSize: '1rem' }}>{template.name}</strong>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>{template.vision}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{template.tasks.length} starter tasks</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="ghost-btn" onClick={() => setCreationMode(null)}>
+                  Back
+                </button>
+              </div>
             ) : (
               <AiGoalWizard
                 goalName={goalName} setGoalName={setGoalName}
@@ -750,7 +831,7 @@ function GoalsPage({
             </button>
 
             {/* Add task */}
-            <button className="primary-btn" onClick={() => setIsTaskModalOpen(true)}
+            <button className="primary-btn" onClick={() => { resetTaskForm(); setIsTaskModalOpen(true); }}
               style={{ padding: '8px 16px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
               <Plus size={16} style={{ marginRight: '4px' }} />Add Task
             </button>
@@ -777,7 +858,7 @@ function GoalsPage({
                 {taskQuery ? 'Try a different search term.' : taskFilter === 'done' ? 'Complete some tasks to see them here.' : 'Add your first task to get started.'}
               </p>
               {!taskQuery && taskFilter !== 'done' && (
-                <button className="primary-btn" onClick={() => setIsTaskModalOpen(true)} style={{ marginTop: '4px' }}>
+                <button className="primary-btn" onClick={() => { resetTaskForm(); setIsTaskModalOpen(true); }} style={{ marginTop: '4px' }}>
                   <Plus size={16} style={{ marginRight: '4px' }} />Add Task
                 </button>
               )}
@@ -959,10 +1040,10 @@ function GoalsPage({
         <ModalOverlay onClose={() => setIsTaskModalOpen(false)}>
           <GoalTaskForm
             title="New Task"
-            form={getTaskForm(selectedGoal.id)}
-            onChange={payload => updateTaskForm(selectedGoal.id, payload)}
-            onSubmit={e => { addTaskToGoal(selectedGoal.id, e); setIsTaskModalOpen(false); }}
-            toggleSpecificDayHandler={idx => toggleSpecificDay(selectedGoal.id, idx)}
+            form={taskForm}
+            onChange={updateTaskForm}
+            onSubmit={e => { e.preventDefault(); addTaskToGoal(selectedGoal.id, taskForm); resetTaskForm(); setIsTaskModalOpen(false); }}
+            toggleSpecificDayHandler={toggleSpecificDay}
             weekDays={weekDays}
             onCancel={() => setIsTaskModalOpen(false)}
             phases={selectedGoal?.roadmap?.phases || []}

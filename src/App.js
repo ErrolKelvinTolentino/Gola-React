@@ -15,7 +15,7 @@ import GlobalTimerWidget from './components/GlobalTimerWidget';
 import { useTimer } from './context/TimerContext';
 import GlobalStyles from './styles/GlobalStyles';
 import { AppShell, AuroraLayer, MainPanel, FocusWrap } from './styles/AppLayout';
-import { DEFAULT_SETTINGS, DEFAULT_TASK_FORM, INITIAL_GOALS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
+import { DEFAULT_SETTINGS, INITIAL_GOALS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
 import {
   buildCalendarCells,
   getDateKey,
@@ -84,7 +84,6 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   const [goalName, setGoalName] = useState('');
   const [goalVision, setGoalVision] = useState('');
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
-  const [taskFormsByGoal, setTaskFormsByGoal] = useState({});
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
   // ── New state: Focus sessions, streak, AI toggle ─────────────────
@@ -325,31 +324,6 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     .filter(s => s.date === todayKey)
     .reduce((sum, s) => sum + (s.duration || 0), 0);
 
-  const getTaskForm = (goalId) => {
-    const form = taskFormsByGoal[goalId];
-    return form || DEFAULT_TASK_FORM;
-  };
-
-  const updateTaskForm = (goalId, patch) => {
-    setTaskFormsByGoal((current) => ({
-      ...current,
-      [goalId]: {
-        ...getTaskForm(goalId),
-        ...patch
-      }
-    }));
-  };
-
-  const toggleSpecificDay = (goalId, weekDay) => {
-    const form = getTaskForm(goalId);
-    const exists = form.specificDays.includes(weekDay);
-    const nextDays = exists
-      ? form.specificDays.filter((day) => day !== weekDay)
-      : [...form.specificDays, weekDay];
-
-    updateTaskForm(goalId, { specificDays: nextDays.sort((a, b) => a - b) });
-  };
-
   const openGoalModal = () => setIsGoalModalOpen(true);
   const closeGoalModal = () => {
     setIsGoalModalOpen(false);
@@ -359,20 +333,32 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
   const addGoal = (eventOrTasks, roadmapData) => {
     let generatedTasks = [];
+    let nameOverride;
+    let visionOverride;
+    let roadmapOverride;
+
     if (eventOrTasks && typeof eventOrTasks.preventDefault === 'function') {
       eventOrTasks.preventDefault();
     } else if (Array.isArray(eventOrTasks)) {
       generatedTasks = eventOrTasks;
+    } else if (eventOrTasks && typeof eventOrTasks === 'object') {
+      if (Array.isArray(eventOrTasks.tasks)) {
+        generatedTasks = eventOrTasks.tasks;
+      }
+      nameOverride = eventOrTasks.name;
+      visionOverride = eventOrTasks.vision;
+      roadmapOverride = eventOrTasks.roadmapData;
     }
-    
-    if (!goalName.trim()) return;
+
+    const finalName = (nameOverride ?? goalName).trim();
+    if (!finalName) return;
 
     const newGoal = {
       id: Date.now(),
-      name: goalName.trim(),
-      vision: goalVision.trim() || 'A clear target worth showing up for.',
+      name: finalName,
+      vision: (visionOverride ?? goalVision).trim() || 'A clear target worth showing up for.',
       tasks: generatedTasks,
-      roadmap: roadmapData || null,
+      roadmap: roadmapOverride || roadmapData || null,
       focusMinutes: 0,
       weeklyReflections: []
     };
@@ -382,41 +368,33 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     closeGoalModal();
   };
 
-  const addTaskToGoal = (goalId, event) => {
-    event.preventDefault();
-    const form = getTaskForm(goalId);
-
-    if (!form.title.trim()) return;
-    if (form.recurrenceType === 'specific-days' && form.specificDays.length === 0) return;
+  const addTaskToGoal = (goalId, form) => {
+    if (!form?.title?.trim()) return;
+    if (form.recurrenceType === 'specific-days' && (form.specificDays || []).length === 0) return;
 
     const newTask = {
       id: Date.now(),
       title: form.title.trim(),
-      description: '',
+      description: form.description || '',
       recurrenceType: form.recurrenceType,
       oneTimeDate: form.oneTimeDate,
       weeklyDay: form.weeklyDay,
       specificDays: form.specificDays,
       deadline: form.deadline,
       timeEstimate: form.timeEstimate,
-      energy: form.energy,      phaseId: form.phaseId || undefined,      completed: false,
+      energy: form.energy,
+      phaseId: form.phaseId || undefined,
+      completed: false,
       completedDates: []
     };
 
-    setGoals((currentGoals) =>
-      currentGoals.map((goal) =>
+    setGoals((currentGoals) => {
+      const nextGoals = currentGoals.map((goal) =>
         goal.id === goalId ? { ...goal, tasks: [newTask, ...goal.tasks] } : goal
-      )
-    );
-
-    setTaskFormsByGoal((current) => ({
-      ...current,
-      [goalId]: {
-        ...DEFAULT_TASK_FORM,
-        specificDays: [...DEFAULT_TASK_FORM.specificDays],
-        oneTimeDate: getDateKey(new Date())
-      }
-    }));
+      );
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
   };
 
   // ── Streak update logic ──────────────────────────────────────────
@@ -661,10 +639,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           selectedGoalId={selectedGoalId}
           setSelectedGoalId={setSelectedGoalId}
           allTaskCount={allTaskCount}
-          getTaskForm={getTaskForm}
-          updateTaskForm={updateTaskForm}
           addTaskToGoal={addTaskToGoal}
-          toggleSpecificDay={toggleSpecificDay}
           weekDays={WEEK_DAYS}
           isTaskActiveOnDate={isTaskActiveOnDate}
           isTaskDoneForDate={isTaskDoneForDate}

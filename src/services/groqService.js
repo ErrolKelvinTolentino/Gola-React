@@ -232,16 +232,23 @@ export async function callGroq(prompt, systemInstruction) {
 }
 
 /**
- * Generate 3 domain-specific clarifying questions for goal planning.
+ * Generate a single adaptive clarifying question for goal planning.
  * Questions should be contextual to the goal domain, not generic.
  */
-export async function generateClarifyingQuestions(goalName, goalVision, deadline, notes) {
-  const systemInstruction = `You are Gola, an AI goal planning assistant. Your job is to ask DOMAIN-SPECIFIC clarifying questions about a user's goal. 
-  
+export async function generateClarifyingQuestions(
+  goalName,
+  goalVision,
+  deadline,
+  notes,
+  previousAnswers = {},
+  askedQuestions = []
+) {
+  const systemInstruction = `You are Gola, an AI goal planning assistant. Your job is to ask DOMAIN-SPECIFIC clarifying questions about a user's goal.
+
 RULES:
-- Ask exactly 3 questions that are specific to the goal's domain
+- Ask exactly 1 question that is specific to the goal's domain
 - Each question must have exactly 3 options
-- Questions should help you understand the user's context, skill level, resources, and preferences WITHIN the domain
+- Questions should build on previous answers and avoid repeating past questions
 - Do NOT ask generic productivity questions like "How much time do you have?" or "What's your biggest bottleneck?"
 - For "Learn guitar" ask about guitar type, music style, practice setup
 - For "Launch a SaaS" ask about tech stack, target market, monetization strategy
@@ -259,10 +266,16 @@ Vision: "${goalVision || 'Not specified'}"
 Deadline: "${deadline || 'Flexible'}"
 Additional notes: "${notes || 'None'}"
 
-Generate 3 domain-specific clarifying questions for this goal.`;
+Previous answers:
+${JSON.stringify(previousAnswers)}
+
+Questions already asked:
+${askedQuestions.length ? askedQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n') : 'None'}
+
+Generate the next most helpful clarifying question.`;
 
   const response = await callGroq(prompt, systemInstruction);
-  const questions = Array.isArray(response?.questions) ? response.questions.slice(0, 3) : [];
+  const questions = Array.isArray(response?.questions) ? response.questions.slice(0, 1) : [];
 
   if (questions.length === 0) {
     throw new Error('Groq returned no clarifying questions.');
