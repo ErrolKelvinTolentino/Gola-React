@@ -6,6 +6,10 @@
 ───────────────────────────────────────────────────────────── */
 
 const GROQ_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
+if (process.env.NODE_ENV !== 'production') {
+  // eslint-disable-next-line no-console
+  console.log('GROQ API Key present:', Boolean(GROQ_API_KEY));
+}
 const GROQ_MODELS = [
   'openai/gpt-oss-120b',
   'openai/gpt-oss-20b'

@@ -3,7 +3,7 @@ import {
   BarChart3, Target, CheckCircle2, AlertTriangle, XCircle, 
   Clock, ChevronDown, ChevronUp, Loader2, Sparkles, History
 } from 'lucide-react';
-import { addDays, isTaskActiveOnDate, isTaskDoneForDate as isTaskDoneForDateUtil } from '../utils/dateUtils';
+import { addDays, getDateKey, getGoalProgress, isTaskActiveOnDate, isTaskDoneForDate as isTaskDoneForDateUtil } from '../utils/dateUtils';
 import { generateWeeklyReview, isGroqAvailable } from '../services/groqService';
 
 const STATUS_CONFIG = {
@@ -12,10 +12,11 @@ const STATUS_CONFIG = {
   behind: { label: 'Behind', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', icon: XCircle }
 };
 
-function ReviewPage({ goals, focusSessions, onAdjustGoal, today, aiEnabled, isTaskDoneForDate }) {
+function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiEnabled, isTaskDoneForDate }) {
   const [aiReview, setAiReview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [toast, setToast] = useState(null);
   const safeIsTaskDoneForDate = isTaskDoneForDate || isTaskDoneForDateUtil;
 
   // ── Calculate weekly stats ────────────────────────────────────
@@ -69,11 +70,96 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, today, aiEnabled, isTa
     });
   }, [goals, today, focusSessions, safeIsTaskDoneForDate]);
 
+  const previousWeekStats = useMemo(() => {
+    const weekStart = addDays(today, -13);
+    const weekEnd = addDays(today, -7);
+
+    return goals.map(goal => {
+      let tasksCompleted = 0;
+      let totalTaskOccurrences = 0;
+
+      for (let i = 0; i < 7; i++) {
+        const day = addDays(weekStart, i);
+        for (const task of goal.tasks) {
+          if (isTaskActiveOnDate(task, day)) {
+            totalTaskOccurrences++;
+            if (safeIsTaskDoneForDate(task, day)) {
+              tasksCompleted++;
+            }
+          }
+        }
+      }
+
+      const completionRate = totalTaskOccurrences > 0
+        ? Math.round((tasksCompleted / totalTaskOccurrences) * 100)
+        : 0;
+
+      return {
+        goalId: goal.id,
+        completionRate
+      };
+    });
+  }, [goals, today, safeIsTaskDoneForDate]);
+
   const totalCompletedThisWeek = weekStats.reduce((sum, g) => sum + g.tasksCompleted, 0);
   const totalOccurrencesThisWeek = weekStats.reduce((sum, g) => sum + g.totalTaskOccurrences, 0);
   const goalsWithTasks = weekStats.filter(g => g.totalTaskOccurrences > 0);
   const goalsWithTasksCount = goalsWithTasks.length;
   const weekStatsSignature = useMemo(() => JSON.stringify(weekStats), [weekStats]);
+
+  const currentWeekCompletionRate = totalOccurrencesThisWeek > 0
+    ? Math.round((totalCompletedThisWeek / totalOccurrencesThisWeek) * 100)
+    : 0;
+  const previousWeekCompletionRate = useMemo(() => {
+    const totalCompleted = previousWeekStats.reduce((sum, g) => sum + g.completionRate, 0);
+    const totalGoals = previousWeekStats.length || 1;
+    return Math.round(totalCompleted / totalGoals);
+  }, [previousWeekStats]);
+
+  const showToast = (message) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3200);
+  };
+
+  const handleAdjustGoal = async (goalId, adjustmentType) => {
+    const goal = goals.find(g => g.id === goalId);
+    if (!goal || !updateGoal) return;
+
+    if (adjustmentType === 'extend_timeline') {
+      const extendedTasks = goal.tasks.map(task => ({
+        ...task,
+        deadline: task.deadline ? getDateKey(addDays(new Date(task.deadline), 7)) : null
+      }));
+      updateGoal(goalId, { tasks: extendedTasks });
+    }
+
+    if (adjustmentType === 'reduce_scope') {
+      const highPriorityTasks = goal.tasks.filter(t => t.energy !== 'Low');
+      updateGoal(goalId, { tasks: highPriorityTasks });
+    }
+
+    const reflection = {
+      goalId,
+      date: getDateKey(new Date()),
+      adjustment: adjustmentType,
+      completionRate: getGoalProgress(goal)
+    };
+
+    const reflections = [...(goal.weeklyReflections || []), reflection];
+    updateGoal(goalId, { weeklyReflections: reflections });
+
+    showToast(`Applied ${adjustmentType.replace('_', ' ')} to ${goal.name}`);
+  };
+
+  const WeekComparison = ({ currentWeek, previousWeek }) => {
+    const improvement = currentWeek - previousWeek;
+    const label = improvement >= 0 ? '📈' : '📉';
+    return (
+      <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+        {label} {Math.abs(improvement)}% vs last week
+      </div>
+    );
+  };
 
   // ── Fetch AI review ──────────────────────────────────────────
   useEffect(() => {
@@ -142,6 +228,9 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, today, aiEnabled, isTa
         <p style={{ margin: '8px 0 0', fontSize: '0.92rem', color: 'rgba(255,255,255,0.9)' }}>
           Across {goalsWithTasks.length} active goal{goalsWithTasks.length !== 1 ? 's' : ''}
         </p>
+        <div style={{ marginTop: '8px', color: 'rgba(255,255,255,0.85)' }}>
+          <WeekComparison currentWeek={currentWeekCompletionRate} previousWeek={previousWeekCompletionRate} />
+        </div>
       </div>
 
       {/* ── AI Assessment ────────────────────────────────────── */}
@@ -283,21 +372,21 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, today, aiEnabled, isTa
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
                     <button
                       className="ghost-btn"
-                      onClick={() => onAdjustGoal(stat.goalId, 'extend_timeline')}
+                      onClick={() => handleAdjustGoal(stat.goalId, 'extend_timeline')}
                       style={{ padding: '8px 14px', fontSize: '0.78rem', fontWeight: 600 }}
                     >
                       Extend timeline by 1 week
                     </button>
                     <button
                       className="ghost-btn"
-                      onClick={() => onAdjustGoal(stat.goalId, 'reduce_scope')}
+                      onClick={() => handleAdjustGoal(stat.goalId, 'reduce_scope')}
                       style={{ padding: '8px 14px', fontSize: '0.78rem', fontWeight: 600 }}
                     >
                       Reduce daily tasks by 25%
                     </button>
                     <button
                       className="ghost-btn"
-                      onClick={() => onAdjustGoal(stat.goalId, 'keep_current')}
+                      onClick={() => handleAdjustGoal(stat.goalId, 'keep_current')}
                       style={{ padding: '8px 14px', fontSize: '0.78rem', fontWeight: 600, color: 'var(--accent)' }}
                     >
                       Keep current plan
@@ -340,6 +429,26 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, today, aiEnabled, isTa
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '32px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'var(--panel-strong)',
+          border: '1px solid var(--line)',
+          padding: '10px 18px',
+          borderRadius: '999px',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+          color: 'var(--text)',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+          zIndex: 999
+        }}>
+          {toast}
         </div>
       )}
     </section>

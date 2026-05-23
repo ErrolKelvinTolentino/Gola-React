@@ -41,6 +41,13 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday, logFocusSession, 
   
   const progressRatio = (getTotalTime() - timeLeft) / getTotalTime();
 
+  const applyPreset = (work, short, long) => {
+    setWorkDur(work);
+    setShortDur(short);
+    setLongDur(long);
+    setCustomMode('work');
+  };
+
   const getAccentRGB = () => {
     if (mode === 'work') return '139, 92, 246'; // Violet
     if (mode === 'shortBreak') return '236, 72, 153'; // Pink
@@ -196,6 +203,18 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday, logFocusSession, 
           <button onClick={toggleTimer} style={{ background: 'var(--panel)', border: '1px solid var(--line)', color: 'var(--text)', padding: '8px 32px', borderRadius: '99px', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.3s ease', outline: 'none', boxShadow: isActive ? `0 0 25px ${accentColor}40` : 'var(--shadow)' }}>
             {isActive ? 'Pause' : 'Start'}
           </button>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button className="ghost-btn" onClick={() => applyPreset(25, 5, 15)} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
+              Pomodoro 25/5
+            </button>
+            <button className="ghost-btn" onClick={() => applyPreset(50, 10, 20)} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
+              Deep Work 50/10
+            </button>
+            <button className="ghost-btn" onClick={() => applyPreset(90, 20, 30)} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
+              Ultra 90/20
+            </button>
+          </div>
         </div>
       </div>
 

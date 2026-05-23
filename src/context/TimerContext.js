@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 
 const TimerContext = createContext();
 
@@ -12,8 +12,11 @@ export function TimerProvider({ children }) {
   const [mode, setMode] = useState('work'); // 'work', 'shortBreak', 'longBreak'
   const [activeTask, setActiveTask] = useState(null);
   const [sessionCompleted, setSessionCompleted] = useState(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [autoStartNext, setAutoStartNext] = useState(false);
 
-  const playAlarm = () => {
+  const playAlarm = useCallback(() => {
+    if (!soundEnabled) return;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
@@ -37,26 +40,39 @@ export function TimerProvider({ children }) {
     playTone(659.25, 0.15);
     playTone(783.99, 0.3);
     playTone(1046.50, 0.45);
-  };
+  }, [soundEnabled]);
+
+  const notifySessionComplete = useCallback((completedMode) => {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    const message = completedMode === 'work' ? 'Time for a break.' : 'Break over. Ready to focus?';
+    new Notification('Timer Complete!', { body: message });
+  }, []);
+
+  const completeSession = useCallback((completedMode, completedDur) => {
+    const nextMode = completedMode === 'work' ? 'shortBreak' : 'work';
+    const nextDuration = nextMode === 'work' ? workDur : shortDur;
+
+    setMode(nextMode);
+    setTimeLeft(Math.max(1, nextDuration) * 60);
+
+    if (completedMode === 'work') {
+      setSessionCompleted({ mode: completedMode, duration: completedDur });
+    }
+
+    notifySessionComplete(completedMode);
+
+    if (autoStartNext) {
+      setIsActive(true);
+    }
+  }, [autoStartNext, notifySessionComplete, shortDur, workDur]);
 
   const skipTimer = () => {
     setIsActive(false);
-    
+
     const totalTime = mode === 'work' ? workDur * 60 : mode === 'shortBreak' ? shortDur * 60 : longDur * 60;
-    const elapsedMinutes = Math.round((totalTime - timeLeft) / 60);
-    const completedMode = mode;
-
-    if (mode === 'work') {
-      setMode('shortBreak');
-      setTimeLeft(Math.max(1, shortDur) * 60);
-    } else {
-      setMode('work');
-      setTimeLeft(Math.max(1, workDur) * 60);
-    }
-
-    if (completedMode === 'work') {
-      setSessionCompleted({ mode: completedMode, duration: elapsedMinutes > 0 ? elapsedMinutes : 1 });
-    }
+    const elapsedMinutes = Math.max(1, Math.round((totalTime - timeLeft) / 60));
+    completeSession(mode, elapsedMinutes);
   };
 
   useEffect(() => {
@@ -68,24 +84,12 @@ export function TimerProvider({ children }) {
     } else if (isActive && timeLeft === 0) {
       setIsActive(false);
       playAlarm();
-      
-      const completedMode = mode;
-      const completedDur = mode === 'work' ? workDur : mode === 'shortBreak' ? shortDur : longDur;
-      
-      if (mode === 'work') {
-        setMode('shortBreak');
-        setTimeLeft(Math.max(1, shortDur) * 60);
-      } else {
-        setMode('work');
-        setTimeLeft(Math.max(1, workDur) * 60);
-      }
 
-      if (completedMode === 'work') {
-        setSessionCompleted({ mode: completedMode, duration: completedDur });
-      }
+      const completedDur = mode === 'work' ? workDur : mode === 'shortBreak' ? shortDur : longDur;
+      completeSession(mode, completedDur);
     }
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode, workDur, shortDur]);
+  }, [completeSession, isActive, mode, playAlarm, timeLeft, workDur, shortDur, longDur]);
 
   const toggleTimer = () => setIsActive(!isActive);
 
@@ -104,7 +108,9 @@ export function TimerProvider({ children }) {
       timeLeft, setTimeLeft, isActive, toggleTimer, mode, setCustomMode, skipTimer,
       activeTask, setActiveTask, 
       workDur, setWorkDur, shortDur, setShortDur, longDur, setLongDur,
-      sessionCompleted, clearSessionCompleted
+      sessionCompleted, clearSessionCompleted,
+      soundEnabled, setSoundEnabled,
+      autoStartNext, setAutoStartNext
     }}>
       {children}
     </TimerContext.Provider>

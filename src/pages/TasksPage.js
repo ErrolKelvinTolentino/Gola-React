@@ -864,6 +864,9 @@ function TasksPage({
                                     <span className="meta-chip">⏱ {task.timeEstimate}</span>
                                   )}
                                   {task.energy && <span className="meta-chip">⚡ {task.energy}</span>}
+                                  {task.progressMinutes > 0 && (
+                                    <span className="meta-chip">🧠 {task.progressMinutes}/{parseTimeEstimate(task.timeEstimate)} min</span>
+                                  )}
                                   {task.deadline && (
                                     <span className="meta-chip highlight">
                                       <CalendarIcon size={11} /> {prettyDate(task.deadline)}
@@ -961,6 +964,11 @@ function TasksPage({
                             style={{ fontSize: '0.68rem', padding: '2px 6px' }}
                           >
                             ⏱ {task.timeEstimate}
+                          </span>
+                        )}
+                        {task.progressMinutes > 0 && (
+                          <span className="meta-chip" style={{ fontSize: '0.68rem', padding: '2px 6px' }}>
+                            🧠 {task.progressMinutes}/{parseTimeEstimate(task.timeEstimate)} min
                           </span>
                         )}
                         <span

@@ -246,6 +246,16 @@ function AssessmentModal({ goal, onComplete, onCancel }) {
 const ENERGY_COLORS = { High: '#ec4899', Medium: '#8b5cf6', Low: '#3b82f6' };
 const TIME_COLORS = { '15m': '#10b981', '30m': '#3b82f6', '1h': '#8b5cf6', '2h+': '#ec4899' };
 
+function parseTimeEstimate(value) {
+  if (!value) return 30;
+  if (value === '15m') return 15;
+  if (value === '30m') return 30;
+  if (value === '1h') return 60;
+  if (value === '2h+') return 120;
+  const asNumber = Number.parseInt(value, 10);
+  return Number.isFinite(asNumber) ? asNumber : 30;
+}
+
 function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, dense }) {
   return (
     <div style={{
@@ -301,6 +311,11 @@ function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, d
           {task.deadline && (
             <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
               <CalendarIcon size={11} /> {task.deadline}
+            </span>
+          )}
+          {task.progressMinutes > 0 && (
+            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>
+              {task.progressMinutes}/{parseTimeEstimate(task.timeEstimate)} min
             </span>
           )}
         </div>

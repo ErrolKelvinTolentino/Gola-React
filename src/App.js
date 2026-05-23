@@ -575,6 +575,17 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     });
   };
 
+  const updateGoal = (goalId, updates) => {
+    const updatedAt = new Date().toISOString();
+    setGoals((current) => {
+      const nextGoals = current.map((goal) =>
+        goal.id === goalId ? { ...goal, ...updates, updatedAt } : goal
+      );
+      persistGoals(nextGoals);
+      return nextGoals;
+    });
+  };
+
   const completeGoal = (goalId, assessment) => {
     const completedAt = new Date().toISOString();
     setGoals(current => {
@@ -733,6 +744,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           goals={goals}
           focusSessions={focusSessions}
           onAdjustGoal={adjustGoal}
+          updateGoal={updateGoal}
           today={today}
           aiEnabled={aiEnabled}
           isTaskActiveOnDate={isTaskActiveOnDate}
@@ -870,6 +882,13 @@ function App() {
       setLoadingAuth(false);
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
   }, []);
 
   useEffect(() => {

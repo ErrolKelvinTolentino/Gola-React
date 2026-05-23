@@ -1,9 +1,11 @@
 import React from 'react';
-import { Download, User, Sparkles, Cpu } from 'lucide-react';
+import { Download, User } from 'lucide-react';
 import { isGroqAvailable } from '../services/groqService';
+import { useTimer } from '../context/TimerContext';
 
 function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, onOpenProfile }) {
   const groqAvailable = isGroqAvailable();
+  const { soundEnabled, setSoundEnabled, autoStartNext, setAutoStartNext } = useTimer();
 
   return (
     <section className="page page-enter">
@@ -95,6 +97,40 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
             <Download size={16} />
             Export JSON
           </button>
+        </div>
+
+        {/* Timer Settings */}
+        <div className="setting-row" style={{ padding: '24px 32px', borderBottom: '1px solid var(--line)' }}>
+          <div>
+            <strong style={{ fontSize: '1.1rem', display: 'block', marginBottom: '4px' }}>Timer Preferences</strong>
+            <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
+              Control sound alerts and session flow.
+            </p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-end' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem' }}>
+              <span style={{ color: 'var(--muted)' }}>Timer sounds</span>
+              <button
+                type="button"
+                className={soundEnabled ? 'toggle on' : 'toggle'}
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                aria-pressed={soundEnabled}
+              >
+                <span />
+              </button>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem' }}>
+              <span style={{ color: 'var(--muted)' }}>Auto-start next</span>
+              <button
+                type="button"
+                className={autoStartNext ? 'toggle on' : 'toggle'}
+                onClick={() => setAutoStartNext(!autoStartNext)}
+                aria-pressed={autoStartNext}
+              >
+                <span />
+              </button>
+            </label>
+          </div>
         </div>
 
         {/* Account Link */}
