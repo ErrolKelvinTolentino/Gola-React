@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Target, CheckSquare, Timer, BarChart3, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Target, CheckSquare, Timer, BarChart3, Settings, ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import golaLogo from '../../assets/gola-logo.png';
 
 const ICON_MAP = {
   Today: <CheckSquare size={22} />,
   Goals: <Target size={22} />,
   Focus: <Timer size={22} />,
+  Calendar: <Calendar size={22} />,
   Review: <BarChart3 size={22} />,
   Settings: <Settings size={22} />
 };
@@ -26,11 +27,6 @@ function Sidebar({ navItems, activePage, onChangePage }) {
   return (
     <aside 
       className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}
-      style={{
-        width: isCollapsed ? '72px' : '240px',
-        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        overflow: 'hidden'
-      }}
     >
       {/* ── Brand row ─────────────────────────────────────────── */}
       <div 

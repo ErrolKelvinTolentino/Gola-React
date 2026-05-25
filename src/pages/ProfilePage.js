@@ -16,8 +16,6 @@ function ProfilePage({ user, theme = 'light', onSaveProfile, onLogout }) {
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [password, setPassword] = useState('');
-  const [soundFx, setSoundFx] = useState(true);
-  const [focusMode, setFocusMode] = useState(true);
   const [saved, setSaved] = useState(false);
 
   const isDark = theme === 'dark';

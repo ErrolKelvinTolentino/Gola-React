@@ -95,7 +95,7 @@ function TasksPage({
   getActiveTasksForDate,
   isTaskActiveOnDate,
   isTaskDoneForDate,
-  toggleTaskDoneForDate,
+  toggleTaskCompletion,
   toggleTaskDoneForToday,
   updateTask,
   getRecurrenceText,
@@ -202,7 +202,24 @@ function TasksPage({
 
   const orderedPendingTasks = useMemo(() => {
     return [...pendingTasks]
-      .map((item, index) => ({ ...item, _order: item.task.order ?? index }))
+      .map((item, index) => {
+        const orderVal = item.task.order;
+        let numericOrder;
+        if (typeof orderVal === 'number') {
+          numericOrder = orderVal;
+        } else if (typeof orderVal === 'string') {
+          const match = orderVal.match(/^temp_(\d+)/);
+          if (match) {
+            numericOrder = parseInt(match[1], 10);
+          } else {
+            const parsed = parseInt(orderVal, 10);
+            numericOrder = isNaN(parsed) ? index : parsed;
+          }
+        } else {
+          numericOrder = index;
+        }
+        return { ...item, _order: numericOrder };
+      })
       .sort((a, b) => a._order - b._order);
   }, [pendingTasks]);
 
@@ -250,8 +267,8 @@ function TasksPage({
 
   // ── Toggle handler ───────────────────────────────────────────────
   const handleToggleTaskDone = (goalId, taskId) => {
-    if (typeof toggleTaskDoneForDate === 'function') {
-      toggleTaskDoneForDate(goalId, taskId, selectedDate);
+    if (typeof toggleTaskCompletion === 'function') {
+      toggleTaskCompletion(goalId, taskId, selectedDate);
       return;
     }
     if (typeof toggleTaskDoneForToday === 'function') {
@@ -353,6 +370,7 @@ function TasksPage({
         completionRate={completionRate}
         streak={streak || 0}
         aiEnabled={aiEnabled}
+        onStartTask={onStartFocus}
       />
 
       {recommendedTask && (

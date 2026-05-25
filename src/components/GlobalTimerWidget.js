@@ -19,21 +19,9 @@ function GlobalTimerWidget({ activePage, setActivePage }) {
 
   return (
     <div 
+      className="global-timer-widget"
       style={{ 
-        position: 'fixed', 
-        bottom: '32px', 
-        left: '290px', 
-        zIndex: 100, 
-        background: 'var(--panel-strong)', 
-        border: `2px solid ${mode === 'work' ? 'var(--accent)' : 'var(--good)'}`, 
-        padding: '12px 20px', 
-        borderRadius: '99px', 
-        boxShadow: '0 8px 30px rgba(0,0,0,0.15)', 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: '16px', 
-        animation: 'floatUpFade 0.4s ease forwards',
-        cursor: 'pointer'
+        border: `2px solid ${mode === 'work' ? 'var(--accent)' : 'var(--good)'}`
       }}
       onClick={(e) => {
         // Stop click from traveling if user clicks toggle specifically

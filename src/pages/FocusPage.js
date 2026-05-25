@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Target, X, Maximize, RotateCcw, Settings, StepForward, Headphones } from 'lucide-react';
+import { Target, X, Maximize, Settings, StepForward, Headphones } from 'lucide-react';
 import { useTimer } from '../context/TimerContext';
 import { useNoise } from '../context/NoiseContext';
 
@@ -171,8 +171,8 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday, logFocusSession, 
       </div>
 
       {/* Reduced Ticking Dial */}
-      <div style={{ position: 'relative', width: '380px', height: '380px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-        <svg width="380" height="380" viewBox="0 0 380 380" style={{ position: 'absolute', top: 0, left: 0 }}>
+      <div style={{ position: 'relative', width: 'clamp(280px, 80vw, 380px)', height: 'clamp(280px, 80vw, 380px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+        <svg width="100%" height="100%" viewBox="0 0 380 380" style={{ position: 'absolute', top: 0, left: 0 }}>
            {Array.from({ length: 100 }).map((_, i) => {
              const rotation = (i / 100) * 360;
              const isFilled = (i / 100) < progressRatio;

@@ -1,23 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
-import HomePage from './pages/HomePage';
 import TasksPage from './pages/TasksPage';
-import GoalsPage from './pages/GoalsPage';
 import FocusPage from './pages/FocusPage';
-import ReviewPage from './pages/ReviewPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProfilePage from './pages/ProfilePage';
 import GlobalTimerWidget from './components/GlobalTimerWidget';
+import MobileBottomNav from './components/MobileBottomNav';
 import { useTimer } from './context/TimerContext';
 import GlobalStyles from './styles/GlobalStyles';
 import { AppShell, AuroraLayer, MainPanel, FocusWrap } from './styles/AppLayout';
-import { DEFAULT_SETTINGS, INITIAL_GOALS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
+import { DEFAULT_SETTINGS, NAV_ITEMS, WEEK_DAYS } from './data/appData';
 import {
-  buildCalendarCells,
   getDateKey,
   getRecurrenceText,
   isTaskActiveOnDate,
@@ -25,9 +22,13 @@ import {
   prettyDate
 } from './utils/dateUtils';
 import { getNextMidnight, getYesterday, rolloverIncompleteTasks } from './utils/taskRollover';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { auth, db } from './firebase/config';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+
+const GoalsPage = lazy(() => import('./pages/GoalsPage'));
+const ReviewPage = lazy(() => import('./pages/ReviewPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 
 const THEME_STORAGE_KEY = 'gola.theme';
 const LEGACY_THEME_STORAGE_KEY = 'gola.mock.theme';
@@ -56,6 +57,8 @@ const parseStoredJson = (key) => {
   }
 };
 
+const createTempId = () => `temp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
 /* ── Streak milestone check ────────────────────────────────────────── */
 const STREAK_MILESTONES = [3, 7, 14, 30, 60, 90, 100];
 function checkStreakMilestone(streak) {
@@ -69,6 +72,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   const navigate = useNavigate();
   const { setActiveTask } = useTimer();
   const hasHydratedCloud = useRef(false);
+  const [isHydrating, setIsHydrating] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
   const userStorageKey = useCallback(
     (suffix) => getUserScopedStorageKey(user?.uid, suffix),
     [user?.uid]
@@ -78,8 +83,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   // ── Goals state (persisted) ──────────────────────────────────────
   const [goals, setGoals] = useState(() => {
     const stored = parseStoredJson(getUserScopedStorageKey(user?.uid, STORAGE_SUFFIXES.goals));
-    if (Array.isArray(stored)) return stored;
-    return INITIAL_GOALS;
+    return Array.isArray(stored) ? stored : [];
   });
   
   const [selectedGoalId, setSelectedGoalId] = useState(null);
@@ -114,17 +118,18 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   // ── Hydrate dashboard state from Firestore ───────────────────────
   useEffect(() => {
     let isSubscribed = true;
+    let unsubscribe = null;
 
-    const hydrateFromCloud = async () => {
-      if (!user?.uid) {
-        hasHydratedCloud.current = true;
-        return;
-      }
+    if (!user?.uid) {
+      hasHydratedCloud.current = true;
+      setIsHydrating(false);
+      return () => {};
+    }
 
-      try {
-        const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
-        const snapshot = await getDoc(appStateRef);
-
+    const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
+    unsubscribe = onSnapshot(
+      appStateRef,
+      async (snapshot) => {
         if (!isSubscribed) return;
 
         if (snapshot.exists()) {
@@ -158,44 +163,58 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
             setSettings((current) => ({ ...current, ...cloud.settings }));
           }
         } else {
-          setGoals([]);
-          setFocusSessions([]);
-          setStreak(0);
-          setLastActiveDate(null);
-          setAiEnabled(true);
+          const defaultState = {
+            goals: [],
+            focusSessions: [],
+            streak: 0,
+            lastActiveDate: null,
+            aiEnabled: true,
+            theme,
+            settings: DEFAULT_SETTINGS,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+
+          setGoals(defaultState.goals);
+          setFocusSessions(defaultState.focusSessions);
+          setStreak(defaultState.streak);
+          setLastActiveDate(defaultState.lastActiveDate);
+          setAiEnabled(defaultState.aiEnabled);
           setSettings(DEFAULT_SETTINGS);
 
-          await setDoc(
-            appStateRef,
-            {
-              goals: [],
-              focusSessions: [],
-              streak: 0,
-              lastActiveDate: null,
-              aiEnabled: true,
-              theme,
-              settings: DEFAULT_SETTINGS,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            },
-            { merge: true }
-          );
+          await setDoc(appStateRef, defaultState, { merge: true });
         }
-      } catch (error) {
-        console.warn('Failed to hydrate Firestore data:', error);
-      } finally {
+
         if (isSubscribed) {
           hasHydratedCloud.current = true;
+          setIsHydrating(false);
+        }
+      },
+      (error) => {
+        console.warn('Failed to hydrate Firestore data:', error);
+        if (isSubscribed) {
+          hasHydratedCloud.current = true;
+          setIsHydrating(false);
         }
       }
-    };
-
-    hydrateFromCloud();
+    );
 
     return () => {
       isSubscribed = false;
+      if (unsubscribe) unsubscribe();
     };
   }, [user?.uid, user?.email, user?.name, theme, setTheme]);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // ── Persist goals ────────────────────────────────────────────────
   useEffect(() => {
@@ -267,6 +286,24 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     user?.uid
   ]);
 
+  const persistGoals = useCallback(
+    (nextGoals) => {
+      if (!user?.uid || !hasHydratedCloud.current) return;
+      const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
+      setDoc(
+        appStateRef,
+        {
+          goals: nextGoals,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch((error) => {
+        console.warn('Failed to sync goals to Firestore:', error);
+      });
+    },
+    [user?.uid]
+  );
+
   // ── Rollover incomplete tasks at midnight ───────────────────────
   useEffect(() => {
     const rolloverKey = getRolloverStorageKey(user?.uid);
@@ -327,34 +364,12 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     [goals]
   );
 
-  const persistGoals = useCallback(
-    (nextGoals) => {
-      if (!user?.uid || !hasHydratedCloud.current) return;
-      const appStateRef = doc(db, 'users', user.uid, 'app', 'state');
-      setDoc(
-        appStateRef,
-        {
-          goals: nextGoals,
-          updatedAt: new Date().toISOString()
-        },
-        { merge: true }
-      ).catch((error) => {
-        console.warn('Failed to sync goals to Firestore:', error);
-      });
-    },
-    [user?.uid]
-  );
-
   const completedToday = activeTasksToday.filter(({ task }) => isTaskDoneForDate(task, today)).length;
   const completionRate = activeTasksToday.length
     ? Math.round((completedToday / activeTasksToday.length) * 100)
     : 0;
 
   const allTaskCount = goals.reduce((sum, goal) => sum + goal.tasks.length, 0);
-
-  const calendarCells = buildCalendarCells(goals, today);
-
-  const monthName = today.toLocaleString('en-US', { month: 'long' });
 
   // ── Focus minutes for today ──────────────────────────────────────
   const focusMinutesToday = focusSessions
@@ -373,6 +388,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     let nameOverride;
     let visionOverride;
     let roadmapOverride;
+    let deadlineOverride;
 
     if (eventOrTasks && typeof eventOrTasks.preventDefault === 'function') {
       eventOrTasks.preventDefault();
@@ -385,17 +401,19 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       nameOverride = eventOrTasks.name;
       visionOverride = eventOrTasks.vision;
       roadmapOverride = eventOrTasks.roadmapData;
+      deadlineOverride = eventOrTasks.deadline;
     }
 
     const finalName = (nameOverride ?? goalName).trim();
     if (!finalName) return;
 
     const newGoal = {
-      id: Date.now(),
+      id: createTempId(),
       name: finalName,
       vision: (visionOverride ?? goalVision).trim() || 'A clear target worth showing up for.',
       tasks: generatedTasks,
       roadmap: roadmapOverride || roadmapData || null,
+      deadline: deadlineOverride || null,
       focusMinutes: 0,
       weeklyReflections: []
     };
@@ -410,7 +428,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     if (form.recurrenceType === 'specific-days' && (form.specificDays || []).length === 0) return;
 
     const newTask = {
-      id: Date.now(),
+      id: createTempId(),
       title: form.title.trim(),
       description: form.description || '',
       recurrenceType: form.recurrenceType,
@@ -438,7 +456,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
   // ── Streak update logic ──────────────────────────────────────────
   const updateStreak = useCallback(() => {
-    const todayStr = todayKey;
+    const localToday = new Date();
+    const todayStr = getDateKey(localToday);
     
     if (lastActiveDate === todayStr) {
       // Already counted today
@@ -446,7 +465,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     }
     
     // Check if last active was yesterday
-    const yesterday = new Date(today);
+    const yesterday = new Date(localToday);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = getDateKey(yesterday);
     
@@ -468,9 +487,9 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       setStreakToast(milestone);
       setTimeout(() => setStreakToast(null), 4000);
     }
-  }, [todayKey, lastActiveDate, streak, today]);
+  }, [lastActiveDate, streak]);
 
-  const toggleTaskDoneForDate = (goalId, taskId, dateInput) => {
+  const toggleTaskCompletion = (goalId, taskId, dateInput) => {
     const dateKey = getDateKey(dateInput || today);
 
     setGoals((currentGoals) => {
@@ -486,10 +505,11 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
               return { ...task, completed: !task.completed, updatedAt: new Date().toISOString() };
             }
 
-            const alreadyDone = task.completedDates.includes(dateKey);
+            const completedDates = Array.isArray(task.completedDates) ? task.completedDates : [];
+            const alreadyDone = completedDates.includes(dateKey);
             const nextDates = alreadyDone
-              ? task.completedDates.filter((item) => item !== dateKey)
-              : [...task.completedDates, dateKey];
+              ? completedDates.filter((item) => item !== dateKey)
+              : [...completedDates, dateKey];
 
             return { ...task, completedDates: nextDates, updatedAt: new Date().toISOString() };
           })
@@ -506,7 +526,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   };
 
   const toggleTaskDoneForToday = (goalId, taskId) => {
-    toggleTaskDoneForDate(goalId, taskId, today);
+    toggleTaskCompletion(goalId, taskId, today);
   };
 
   const toggleSetting = (key) => {
@@ -667,6 +687,10 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   const recurrenceText = (task) => getRecurrenceText(task, WEEK_DAYS);
 
   const renderActivePage = () => {
+    if (isHydrating) {
+      return <div className="spinner">Loading app…</div>;
+    }
+
     if (activePage === 'Today') {
       return (
         <TasksPage
@@ -676,7 +700,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           getActiveTasksForDate={getActiveTasksForDate}
           isTaskActiveOnDate={isTaskActiveOnDate}
           isTaskDoneForDate={isTaskDoneForDate}
-          toggleTaskDoneForDate={toggleTaskDoneForDate}
+          toggleTaskCompletion={toggleTaskCompletion}
           toggleTaskDoneForToday={toggleTaskDoneForToday}
           updateTask={updateTask}
           getRecurrenceText={recurrenceText}
@@ -694,35 +718,37 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
     if (activePage === 'Goals') {
       return (
-        <GoalsPage
-          goals={goals}
-          selectedGoal={selectedGoal}
-          selectedGoalId={selectedGoalId}
-          setSelectedGoalId={setSelectedGoalId}
-          allTaskCount={allTaskCount}
-          addTaskToGoal={addTaskToGoal}
-          weekDays={WEEK_DAYS}
-          isTaskActiveOnDate={isTaskActiveOnDate}
-          isTaskDoneForDate={isTaskDoneForDate}
-          toggleTaskDoneForToday={toggleTaskDoneForToday}
-          getRecurrenceText={recurrenceText}
-          prettyDate={prettyDate}
-          today={today}
-          isGoalModalOpen={isGoalModalOpen}
-          openGoalModal={openGoalModal}
-          closeGoalModal={closeGoalModal}
-          goalName={goalName}
-          setGoalName={setGoalName}
-          goalVision={goalVision}
-          setGoalVision={setGoalVision}
-          addGoal={addGoal}
-          theme={theme}
-          updateTask={updateTask}
-          addPhaseToGoal={addPhaseToGoal}
-          movePhase={movePhase}
-          completeGoal={completeGoal}
-          aiEnabled={aiEnabled}
-        />
+        <Suspense fallback={<div className="spinner">Loading goals…</div>}>
+          <GoalsPage
+            goals={goals}
+            selectedGoal={selectedGoal}
+            selectedGoalId={selectedGoalId}
+            setSelectedGoalId={setSelectedGoalId}
+            allTaskCount={allTaskCount}
+            addTaskToGoal={addTaskToGoal}
+            weekDays={WEEK_DAYS}
+            isTaskActiveOnDate={isTaskActiveOnDate}
+            isTaskDoneForDate={isTaskDoneForDate}
+            toggleTaskDoneForToday={toggleTaskDoneForToday}
+            getRecurrenceText={recurrenceText}
+            prettyDate={prettyDate}
+            today={today}
+            isGoalModalOpen={isGoalModalOpen}
+            openGoalModal={openGoalModal}
+            closeGoalModal={closeGoalModal}
+            goalName={goalName}
+            setGoalName={setGoalName}
+            goalVision={goalVision}
+            setGoalVision={setGoalVision}
+            addGoal={addGoal}
+            theme={theme}
+            updateTask={updateTask}
+            addPhaseToGoal={addPhaseToGoal}
+            movePhase={movePhase}
+            completeGoal={completeGoal}
+            aiEnabled={aiEnabled}
+          />
+        </Suspense>
       );
     }
 
@@ -740,16 +766,31 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
 
     if (activePage === 'Review') {
       return (
-        <ReviewPage
-          goals={goals}
-          focusSessions={focusSessions}
-          onAdjustGoal={adjustGoal}
-          updateGoal={updateGoal}
-          today={today}
-          aiEnabled={aiEnabled}
-          isTaskActiveOnDate={isTaskActiveOnDate}
-          isTaskDoneForDate={isTaskDoneForDate}
-        />
+        <Suspense fallback={<div className="spinner">Loading review…</div>}>
+          <ReviewPage
+            goals={goals}
+            focusSessions={focusSessions}
+            onAdjustGoal={adjustGoal}
+            updateGoal={updateGoal}
+            today={today}
+            aiEnabled={aiEnabled}
+            isTaskActiveOnDate={isTaskActiveOnDate}
+            isTaskDoneForDate={isTaskDoneForDate}
+          />
+        </Suspense>
+      );
+    }
+
+    if (activePage === 'Calendar') {
+      return (
+        <Suspense fallback={<div className="spinner">Loading calendar…</div>}>
+          <CalendarPage
+            goals={goals}
+            weekDays={WEEK_DAYS}
+            todayKey={todayKey}
+            compactCalendar={settings.compactCalendar}
+          />
+        </Suspense>
       );
     }
 
@@ -762,6 +803,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           setAiEnabled={setAiEnabled}
           exportData={exportData}
           onOpenProfile={() => navigate('/profile')}
+          settings={settings}
+          onToggleSetting={toggleSetting}
         />
       );
     }
@@ -775,7 +818,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         getActiveTasksForDate={getActiveTasksForDate}
         isTaskActiveOnDate={isTaskActiveOnDate}
         isTaskDoneForDate={isTaskDoneForDate}
-        toggleTaskDoneForDate={toggleTaskDoneForDate}
+        toggleTaskCompletion={toggleTaskCompletion}
         toggleTaskDoneForToday={toggleTaskDoneForToday}
         updateTask={updateTask}
         getRecurrenceText={recurrenceText}
@@ -817,12 +860,15 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           onOpenSettings={() => setActivePage('Settings')}
           onLogout={onLogout}
         />
+        {!isOnline && <div className="offline-badge">📡 Offline Mode</div>}
         {activePage === 'Focus' ? (
           <FocusWrap>
             {renderActivePage()}
           </FocusWrap>
         ) : renderActivePage()}
       </MainPanel>
+
+      <MobileBottomNav activePage={activePage} setActivePage={setActivePage} />
 
       {/* Streak milestone toast */}
       {streakToast && (
@@ -866,6 +912,36 @@ function App() {
 
     return 'light';
   });
+
+  function PrivateRoute({ children }) {
+    return user ? children : <Navigate to="/login" replace />;
+  }
+
+  const handleSaveProfile = async ({ name, email, password }) => {
+    if (!auth.currentUser) return;
+
+    try {
+      if (password) {
+        await updatePassword(auth.currentUser, password);
+      }
+      if (name !== auth.currentUser.displayName) {
+        await updateProfile(auth.currentUser, { displayName: name });
+      }
+      const profileRef = doc(db, 'users', auth.currentUser.uid, 'app', 'state');
+      await setDoc(
+        profileRef,
+        {
+          displayName: name,
+          email,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
+      setUser((prev) => (prev ? { ...prev, name, email } : prev));
+    } catch (error) {
+      console.warn('Failed to save profile:', error);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -917,16 +993,18 @@ function App() {
         />
         <Route
           path="/app"
-          element={user ? <DashboardWorkspace user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} /> : <Navigate to="/login" replace />}
+          element={
+            <PrivateRoute>
+              <DashboardWorkspace user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} />
+            </PrivateRoute>
+          }
         />
         <Route
           path="/profile"
           element={
-            user ? (
-              <ProfilePage user={user} theme={theme} onLogout={handleLogout} />
-            ) : (
-              <Navigate to="/login" replace />
-            )
+            <PrivateRoute>
+              <ProfilePage user={user} theme={theme} onSaveProfile={handleSaveProfile} onLogout={handleLogout} />
+            </PrivateRoute>
           }
         />
         <Route path="*" element={<Navigate to={user ? '/app' : '/login'} replace />} />

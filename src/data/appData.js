@@ -1,6 +1,6 @@
 import { getDateKey } from '../utils/dateUtils';
 
-export const NAV_ITEMS = ['Today', 'Goals', 'Focus', 'Review'];
+export const NAV_ITEMS = ['Today', 'Goals', 'Focus', 'Calendar', 'Review'];
 export const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const INITIAL_GOALS = [];
@@ -18,5 +18,5 @@ export const DEFAULT_TASK_FORM = {
 };
 
 export const DEFAULT_SETTINGS = {
-  // Simplified settings — removed: notifications, focusMode, compactCalendar
+  compactCalendar: false
 };

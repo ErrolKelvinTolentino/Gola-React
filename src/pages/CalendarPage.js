@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CalendarDays, Flame, ChevronLeft, ChevronRight, CheckCircle2, Target } from 'lucide-react';
-import { buildCalendarCells, isTaskActiveOnDate, getDateKey } from '../utils/dateUtils';
+import { buildCalendarCells, isTaskActiveOnDate } from '../utils/dateUtils';
 
 function CalendarPage({ goals, weekDays, todayKey, compactCalendar }) {
   const [viewDate, setViewDate] = useState(new Date());
@@ -112,7 +112,6 @@ function CalendarPage({ goals, weekDays, todayKey, compactCalendar }) {
                   onClick={() => { if (cell.day) setSelectedDateStr(cell.dateKey); }}
                   style={{ 
                     borderRadius: '12px', 
-                    minHeight: compactCalendar ? '60px' : '100px', 
                     border: '1px solid var(--line)',
                     ...heatStyle,
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: compactCalendar ? 'center' : 'flex-start',

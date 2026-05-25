@@ -5,15 +5,18 @@ import reportWebVitals from './reportWebVitals';
 
 import { TimerProvider } from './context/TimerContext';
 import { NoiseProvider } from './context/NoiseContext';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <TimerProvider>
-      <NoiseProvider>
-        <App />
-      </NoiseProvider>
-    </TimerProvider>
+    <ErrorBoundary>
+      <TimerProvider>
+        <NoiseProvider>
+          <App />
+        </NoiseProvider>
+      </TimerProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
 

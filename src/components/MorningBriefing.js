@@ -155,6 +155,25 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
   const MoodIcon = MOOD_ICONS[briefing.mood] || Zap;
   const moodColor = MOOD_COLORS[briefing.mood] || '#8b5cf6';
 
+  const handleStartTaskClick = () => {
+    if (!onStartTask || !briefing?.suggestedFirstTask) return;
+    const taskTitle = briefing.suggestedFirstTask;
+    const matched = (todayTasks || []).find(item => item?.task?.title === taskTitle);
+    if (matched) {
+      onStartTask(matched.task.id, matched.goalId);
+    } else {
+      const partialMatched = (todayTasks || []).find(item => 
+        item?.task?.title && (
+          item.task.title.toLowerCase().includes(taskTitle.toLowerCase()) ||
+          taskTitle.toLowerCase().includes(item.task.title.toLowerCase())
+        )
+      );
+      if (partialMatched) {
+        onStartTask(partialMatched.task.id, partialMatched.goalId);
+      }
+    }
+  };
+
   return (
     <div style={{
       padding: '24px',
@@ -238,7 +257,7 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
           </span>
           {onStartTask && (
             <button
-              onClick={() => onStartTask(briefing.suggestedFirstTask)}
+              onClick={handleStartTaskClick}
               className="ghost-btn"
               style={{
                 marginLeft: 'auto',

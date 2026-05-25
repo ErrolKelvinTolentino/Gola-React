@@ -3,7 +3,7 @@ import { Download, User } from 'lucide-react';
 import { isGroqAvailable } from '../services/groqService';
 import { useTimer } from '../context/TimerContext';
 
-function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, onOpenProfile }) {
+function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, onOpenProfile, settings = {}, onToggleSetting }) {
   const groqAvailable = isGroqAvailable();
   const { soundEnabled, setSoundEnabled, autoStartNext, setAutoStartNext } = useTimer();
 
@@ -26,6 +26,22 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
             className={theme === 'dark' ? 'toggle on' : 'toggle'}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-pressed={theme === 'dark'}
+          >
+            <span />
+          </button>
+        </div>
+
+        {/* Compact Calendar Toggle */}
+        <div className="setting-row" style={{ padding: '24px 32px', borderBottom: '1px solid var(--line)' }}>
+          <div>
+            <strong style={{ fontSize: '1.1rem', display: 'block', marginBottom: '4px' }}>Compact Calendar Layout</strong>
+            <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>Use a smaller calendar cell height without textual labels on the global heatmap.</p>
+          </div>
+          <button
+            type="button"
+            className={settings.compactCalendar ? 'toggle on' : 'toggle'}
+            onClick={() => onToggleSetting && onToggleSetting('compactCalendar')}
+            aria-pressed={settings.compactCalendar}
           >
             <span />
           </button>

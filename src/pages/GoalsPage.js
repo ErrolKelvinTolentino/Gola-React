@@ -2,9 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Target, RotateCw, Calendar as CalendarIcon, CheckCircle2, Cpu,
-  Edit2, Trophy, Plus, Search, X, SlidersHorizontal, LayoutList,
-  Flame, Zap, Clock, BarChart3, BookOpen, Star, ChevronRight,
-  Filter, ArrowUpDown, GripVertical
+  Edit2, Trophy, Plus, Search, X, Flame, Zap, Clock, BookOpen, Star
 } from 'lucide-react';
 import { DEFAULT_TASK_FORM } from '../data/appData';
 import { GOAL_TEMPLATES } from '../data/goalTemplates';
@@ -165,10 +163,17 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
 /* ═══════════════════════════════════════════════════════════════════
    ManualGoalWizard — 3-step goal creation without AI
 ═══════════════════════════════════════════════════════════════════ */
-function ManualGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, onBack, onSubmit }) {
+function ManualGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, goalDeadline, setGoalDeadline, onBack, onSubmit }) {
   const [step, setStep] = useState(1);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (step < 3) return setStep(s => s + 1);
+    onSubmit({ name: goalName, vision: goalVision, deadline: goalDeadline });
+  };
+
   return (
-    <form onSubmit={e => { e.preventDefault(); step < 3 ? setStep(s => s + 1) : onSubmit(e); }}
+    <form onSubmit={handleSubmit}
       style={{ display: 'grid', gap: '14px', width: 'min(100%, 600px)', margin: '0 auto' }}>
       <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Create Goal</h3>
       {step === 1 && (
@@ -179,7 +184,12 @@ function ManualGoalWizard({ goalName, setGoalName, goalVision, setGoalVision, on
       )}
       {step === 2 && (
         <div style={{ display: 'grid', gap: '10px' }}>
-          <input type="date" onChange={e => {}} placeholder="Deadline (optional)" />
+          <input
+            type="date"
+            value={goalDeadline}
+            onChange={e => setGoalDeadline(e.target.value)}
+            placeholder="Deadline (optional)"
+          />
         </div>
       )}
       {step === 3 && (
@@ -348,6 +358,7 @@ function GoalsPage({
   const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false);
   const [newPhaseName, setNewPhaseName] = useState('');
   const [newPhaseColor, setNewPhaseColor] = useState('#8b5cf6');
+  const [goalDeadline, setGoalDeadline] = useState('');
   const [editingTask, setEditingTask] = useState(null);
   const [isAssessmentModalOpen, setIsAssessmentModalOpen] = useState(false);
   const [creationMode, setCreationMode] = useState(null);
@@ -368,6 +379,12 @@ function GoalsPage({
       oneTimeDate: getDateKey(new Date())
     });
   };
+
+  useEffect(() => {
+    if (!isGoalModalOpen) {
+      setGoalDeadline('');
+    }
+  }, [isGoalModalOpen]);
 
   const updateTaskForm = (payload) => {
     setTaskForm((prev) => ({ ...prev, ...payload }));
@@ -440,7 +457,7 @@ function GoalsPage({
     }
 
     return tasks;
-  }, [selectedGoal, taskQuery, taskFilter, sortBy, today]);
+  }, [selectedGoal, taskQuery, taskFilter, sortBy, today, isTaskActiveOnDate, isTaskDoneForDate]);
 
   const pendingTasks = filteredTasks.filter(t => !isTaskDoneForDate(t, today));
   const doneTasks = filteredTasks.filter(t => isTaskDoneForDate(t, today));
@@ -557,6 +574,7 @@ function GoalsPage({
               <ManualGoalWizard
                 goalName={goalName} setGoalName={setGoalName}
                 goalVision={goalVision} setGoalVision={setGoalVision}
+                goalDeadline={goalDeadline} setGoalDeadline={setGoalDeadline}
                 onBack={() => setCreationMode(null)}
                 onSubmit={addGoal}
               />
