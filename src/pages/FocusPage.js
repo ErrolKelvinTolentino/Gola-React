@@ -203,19 +203,79 @@ function FocusPage({ activeTasksToday, toggleTaskDoneForToday, logFocusSession, 
           <button onClick={toggleTimer} style={{ background: 'var(--panel)', border: '1px solid var(--line)', color: 'var(--text)', padding: '8px 32px', borderRadius: '99px', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.3s ease', outline: 'none', boxShadow: isActive ? `0 0 25px ${accentColor}40` : 'var(--shadow)' }}>
             {isActive ? 'Pause' : 'Start'}
           </button>
-
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button className="ghost-btn" onClick={() => applyPreset(25, 5, 15)} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
-              Pomodoro 25/5
-            </button>
-            <button className="ghost-btn" onClick={() => applyPreset(50, 10, 20)} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
-              Deep Work 50/10
-            </button>
-            <button className="ghost-btn" onClick={() => applyPreset(90, 20, 30)} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
-              Ultra 90/20
-            </button>
-          </div>
         </div>
+      </div>
+
+      {/* Preset Session Selector */}
+      <div 
+        style={{ 
+          marginTop: '28px', 
+          marginBottom: '8px',
+          zIndex: 2, 
+          display: 'flex', 
+          gap: '6px', 
+          background: 'var(--panel-strong)', 
+          border: '1px solid var(--line)', 
+          padding: '6px', 
+          borderRadius: '16px', 
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.05)',
+          backdropFilter: 'blur(20px)'
+        }}
+      >
+        {[
+          { name: 'Pomodoro', work: 25, short: 5, long: 15, label: '25/5' },
+          { name: 'Deep Work', work: 50, short: 10, long: 20, label: '50/10' },
+          { name: 'Ultra', work: 90, short: 20, long: 30, label: '90/20' }
+        ].map((preset) => {
+          const isActivePreset = workDur === preset.work && shortDur === preset.short && longDur === preset.long;
+          return (
+            <button
+              key={preset.name}
+              type="button"
+              onClick={() => applyPreset(preset.work, preset.short, preset.long)}
+              style={{
+                background: isActivePreset ? `rgba(${accentRGB}, 0.12)` : 'transparent',
+                border: isActivePreset ? `1px solid rgba(${accentRGB}, 0.3)` : '1px solid transparent',
+                color: isActivePreset ? accentColor : 'var(--muted)',
+                padding: '8px 16px',
+                borderRadius: '12px',
+                fontSize: '0.82rem',
+                fontWeight: isActivePreset ? 600 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                outline: 'none'
+              }}
+              onMouseOver={(e) => {
+                if (!isActivePreset) {
+                  e.currentTarget.style.color = 'var(--text)';
+                  e.currentTarget.style.background = 'var(--bg-2)';
+                }
+              }}
+              onMouseOut={(e) => {
+                if (!isActivePreset) {
+                  e.currentTarget.style.color = 'var(--muted)';
+                  e.currentTarget.style.background = 'transparent';
+                }
+              }}
+            >
+              <span>{preset.name}</span>
+              <span style={{ 
+                fontSize: '0.72rem', 
+                opacity: 0.8,
+                background: isActivePreset ? `rgba(${accentRGB}, 0.15)` : 'var(--line)',
+                color: isActivePreset ? accentColor : 'var(--muted)',
+                padding: '2px 6px',
+                borderRadius: '6px',
+                transition: 'all 0.3s ease'
+              }}>
+                {preset.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Floating Settings/Music Configurations */}

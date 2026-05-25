@@ -93,16 +93,57 @@ function CalendarPage({ goals, weekDays, todayKey, compactCalendar }) {
               const isSelected = cell.dateKey === selectedDateStr;
               
               let heatStyle = {};
-              if (cell.count > 0 && cell.count <= 2) heatStyle = { background: 'rgba(124, 58, 237, 0.1)', borderColor: 'rgba(124, 58, 237, 0.2)' };
-              if (cell.count > 2 && cell.count <= 5) heatStyle = { background: 'rgba(124, 58, 237, 0.25)', borderColor: 'var(--accent)' };
-              if (cell.count > 5) heatStyle = { background: 'var(--accent)', color: 'white' };
-              
+              let isDarkLevel = false;
+
+              if (cell.count > 0) {
+                if (cell.count <= 2) {
+                  heatStyle = { 
+                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)', 
+                    borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)',
+                    color: 'var(--text)'
+                  };
+                } else if (cell.count <= 4) {
+                  heatStyle = { 
+                    background: 'color-mix(in srgb, var(--accent) 30%, transparent)', 
+                    borderColor: 'color-mix(in srgb, var(--accent) 45%, transparent)',
+                    color: 'var(--text)'
+                  };
+                } else if (cell.count <= 6) {
+                  heatStyle = { 
+                    background: 'color-mix(in srgb, var(--accent) 55%, transparent)', 
+                    borderColor: 'color-mix(in srgb, var(--accent) 70%, transparent)',
+                    color: 'var(--text)'
+                  };
+                } else if (cell.count <= 8) {
+                  isDarkLevel = true;
+                  heatStyle = { 
+                    background: 'color-mix(in srgb, var(--accent) 80%, transparent)', 
+                    borderColor: 'color-mix(in srgb, var(--accent) 90%, transparent)',
+                    color: '#ffffff'
+                  };
+                } else {
+                  isDarkLevel = true;
+                  heatStyle = { 
+                    background: 'var(--accent)', 
+                    borderColor: 'var(--accent)',
+                    color: '#ffffff'
+                  };
+                }
+              }
+
               if (isToday) {
-                heatStyle = { ...heatStyle, background: 'var(--panel)', border: '2px solid var(--good)', color: 'var(--text)' };
+                heatStyle = { 
+                  ...heatStyle, 
+                  border: '2px solid var(--good)', 
+                  boxShadow: 'inset 0 0 0 2px rgba(255, 255, 255, 0.4), 0 0 16px rgba(59, 130, 246, 0.4)' 
+                };
               }
 
               if (isSelected && !!cell.day) {
-                heatStyle = { ...heatStyle, outline: '3px solid var(--text)', outlineOffset: '2px' };
+                heatStyle = { 
+                  ...heatStyle, 
+                  boxShadow: '0 0 0 2px var(--panel), 0 0 0 4px var(--text)' 
+                };
               }
 
               return (
@@ -117,16 +158,30 @@ function CalendarPage({ goals, weekDays, todayKey, compactCalendar }) {
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: compactCalendar ? 'center' : 'flex-start',
                     padding: compactCalendar ? '0' : '8px',
                     cursor: cell.day ? 'pointer' : 'default',
-                    opacity: cell.day ? 1 : 0
+                    opacity: cell.day ? 1 : 0,
+                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
                   }}
                 >
                   {cell.day && (
                      <>
-                       <strong style={{ fontSize: '0.95rem', color: isToday ? 'var(--good)' : '' }}>{cell.day}</strong>
+                       <strong style={{ fontSize: '0.95rem', color: isToday ? 'var(--good)' : 'inherit' }}>
+                         {cell.day}
+                       </strong>
                         
                         {cell.count > 0 && !compactCalendar && (
-                          <small style={{ marginTop: 'auto', background: 'rgba(0,0,0,0.15)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            {cell.count > 5 ? <Flame size={12} color="#f59e0b" /> : null}
+                          <small style={{ 
+                            marginTop: 'auto', 
+                            background: isDarkLevel ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.08)', 
+                            color: isDarkLevel ? '#ffffff' : 'var(--text)',
+                            padding: '4px 8px', 
+                            borderRadius: '6px', 
+                            fontSize: '0.75rem', 
+                            fontWeight: 700, 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '4px' 
+                          }}>
+                            {cell.count > 4 ? <Flame size={12} color={isDarkLevel ? '#f59e0b' : 'var(--accent)'} /> : null}
                             {cell.count} {cell.count === 1 ? 'task' : 'tasks'}
                           </small>
                         )}
