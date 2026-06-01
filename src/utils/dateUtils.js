@@ -21,8 +21,12 @@ export function prettyDate(dateKey) {
 }
 
 export function isTaskActiveOnDate(task, date) {
+  if (!task) return false;
   const dateKey = getDateKey(date);
   const weekDay = new Date(`${dateKey}T00:00:00`).getDay();
+
+  // Task might be graduated
+  if (task._graduated) return false;
 
   // Habit Lifespan Limits
   if (task.endDate && dateKey > task.endDate) {
@@ -55,6 +59,8 @@ export function isTaskActiveOnDate(task, date) {
 }
 
 export function isTaskDoneForDate(task, date) {
+  if (!task) return false;
+  if (task._graduated) return true;
   const dateKey = getDateKey(date);
 
   if (task.recurrenceType === 'one-time') {
@@ -214,34 +220,15 @@ export function getTaskLockStatus(task, goal, date) {
   if (goal.roadmap?.phases && Array.isArray(goal.roadmap.phases)) {
     const currentPhaseIndex = goal.roadmap.phases.findIndex(p => p.id === task.phaseId || p.tasks?.some(pt => pt.id === task.id));
     if (currentPhaseIndex > 0) {
-      // Check all preceding phases
-      for (let i = 0; i < currentPhaseIndex; i++) {
-        const precedingPhase = goal.roadmap.phases[i];
-        if (!isPhaseCompleted(precedingPhase, goal, date)) {
-          return { isLocked: true, reason: `Requires preceding phase "${precedingPhase.label}" to be completed` };
-        }
+      // Import dynamically to avoid circular dependency if any
+      const { isPhaseUnlocked, getPhaseUnlockCriteria } = require('./phaseUtils');
+      const phase = goal.roadmap.phases[currentPhaseIndex];
+      if (!isPhaseUnlocked(phase, goal)) {
+        const reason = getPhaseUnlockCriteria(phase, goal) || 'Phase is locked';
+        return { isLocked: true, reason };
       }
     }
   }
 
   return { isLocked: false, reason: null };
-}
-
-export function isPhaseCompleted(phase, goal, date) {
-  if (!phase || !goal) return false;
-  
-  // Find tasks associated with this phase
-  const phaseTasks = goal.tasks?.filter(t => t.phaseId === phase.id || phase.tasks?.some(pt => pt.id === t.id)) || [];
-  if (phaseTasks.length === 0) return false;
-
-  for (const t of phaseTasks) {
-    if (t.recurrenceType === 'one-time') {
-      if (!t.completed) return false;
-    } else {
-      // Recurring tasks are completed for the phase if they have been completed at least once
-      const completedDates = Array.isArray(t.completedDates) ? t.completedDates : [];
-      if (completedDates.length === 0) return false;
-    }
-  }
-  return true;
 }

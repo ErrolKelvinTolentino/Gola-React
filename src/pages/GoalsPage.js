@@ -6,7 +6,10 @@ import {
 } from 'lucide-react';
 import { DEFAULT_TASK_FORM } from '../data/appData';
 import { getGoalProgress, getDateKey, addDays, getTaskLockStatus } from '../utils/dateUtils';
+import { isPhaseUnlocked } from '../utils/phaseUtils';
+import { generateAdaptiveReplan, isGroqAvailable } from '../services/groqService';
 import AiGoalWizard from '../components/AiGoalWizard';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 /* ═══════════════════════════════════════════════════════════════════
    ModalOverlay — portal-based modal wrapper
@@ -881,6 +884,20 @@ function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, o
               </span>
             )}
           </div>
+
+          {isGraduated && !task._graduated && updateTask && (
+            <div style={{ marginTop: '8px', padding: '10px 14px', background: 'rgba(16, 185, 129, 0.08)', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>🎉 Habit target reached!</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                <button 
+                  onClick={() => updateTask(goalId, task.id, { _graduated: true })}
+                  style={{ fontSize: '0.75rem', padding: '4px 10px', background: '#10b981', color: '#fff', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Archive & Celebrate
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
           <button className="ghost-btn" onClick={() => onEdit(task)} title="Edit"
@@ -950,6 +967,8 @@ function GoalsPage({
   const [taskFilter, setTaskFilter] = useState('all');
   const denseMode = false;
   const [sortBy, setSortBy] = useState('default');
+  const [replanData, setReplanData] = useState(null);
+  const [isReplanning, setIsReplanning] = useState(false);
   const [taskForm, setTaskForm] = useState(() => ({
     ...DEFAULT_TASK_FORM,
     specificDays: [...DEFAULT_TASK_FORM.specificDays],
@@ -1267,13 +1286,15 @@ function GoalsPage({
                 onSubmit={addGoal}
               />
             ) : (
-              <AiGoalWizard
-                goalName={goalName} setGoalName={setGoalName}
-                goalVision={goalVision} setGoalVision={setGoalVision}
-                onCancel={() => setCreationMode(null)}
-                onSaveWithTasks={(tasks, roadmapData) => addGoal(tasks, roadmapData)}
-                aiEnabled={aiEnabled}
-              />
+              <ErrorBoundary>
+                <AiGoalWizard
+                  goalName={goalName} setGoalName={setGoalName}
+                  goalVision={goalVision} setGoalVision={setGoalVision}
+                  onCancel={() => setCreationMode(null)}
+                  onSaveWithTasks={(tasks, roadmapData) => addGoal(tasks, roadmapData)}
+                  aiEnabled={aiEnabled}
+                />
+              </ErrorBoundary>
             )}
           </ModalOverlay>
         )}
@@ -1443,6 +1464,78 @@ function GoalsPage({
               </div>
             ))}
           </div>
+
+          {/* AI Adaptive Replan */}
+          {isGroqAvailable() && (
+            <div className="card premium-surface" style={{ padding: '18px 22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: replanData ? '14px' : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Cpu size={16} color="var(--accent)" />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>AI Replan</span>
+                </div>
+                <button
+                  className="ghost-btn"
+                  onClick={async () => {
+                    setIsReplanning(true);
+                    setReplanData(null);
+                    try {
+                      const summary = `${progress}% complete, ${activeCount} active today, ${selectedGoal.focusMinutes || 0} focus minutes total`;
+                      const result = await generateAdaptiveReplan(selectedGoal, summary);
+                      setReplanData(result);
+                    } catch (err) {
+                      console.error('[GoalsPage] Replan failed:', err);
+                    } finally {
+                      setIsReplanning(false);
+                    }
+                  }}
+                  disabled={isReplanning}
+                  style={{ fontSize: '0.8rem', padding: '6px 12px', border: '1px solid var(--line)', borderRadius: '8px', background: 'var(--panel)', color: 'var(--text)', cursor: isReplanning ? 'wait' : 'pointer', opacity: isReplanning ? 0.6 : 1 }}
+                >
+                  {isReplanning ? '⏳ Analyzing...' : replanData ? '↻ Re-analyze' : '✧ Analyze & Suggest'}
+                </button>
+              </div>
+
+              {replanData && (
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  <div style={{
+                    padding: '10px 14px', borderRadius: '10px',
+                    background: replanData.overallHealth === 'on_track' ? 'rgba(16,185,129,0.08)' : replanData.overallHealth === 'behind' ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                    border: `1px solid ${replanData.overallHealth === 'on_track' ? 'rgba(16,185,129,0.25)' : replanData.overallHealth === 'behind' ? 'rgba(239,68,68,0.25)' : 'rgba(245,158,11,0.25)'}`,
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px'
+                  }}>
+                    <p style={{ margin: 0, fontSize: '0.86rem', color: 'var(--text)', lineHeight: 1.5 }}>{replanData.summary}</p>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', flexShrink: 0,
+                      background: replanData.overallHealth === 'on_track' ? '#10b981' : replanData.overallHealth === 'behind' ? '#ef4444' : '#f59e0b',
+                      color: '#fff' }}>
+                      {replanData.overallHealth.replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  {replanData.suggestions.length > 0 && (
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {replanData.suggestions.map((s, i) => (
+                        <div key={i} style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.04em',
+                              background: 'rgba(139,92,246,0.12)', color: 'var(--accent)' }}>{s.type.replace('_', ' ')}</span>
+                            {s.taskTitle && <span style={{ fontSize: '0.78rem', color: 'var(--muted)', fontStyle: 'italic' }}>"{s.taskTitle}"</span>}
+                          </div>
+                          <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text)', lineHeight: 1.5 }}>{s.action}</p>
+                          {s.rationale && <p style={{ margin: '4px 0 0', fontSize: '0.76rem', color: 'var(--muted)', lineHeight: 1.4 }}>{s.rationale}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {replanData.estimatedCompletionAdjustment && replanData.estimatedCompletionAdjustment !== 'no change' && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--muted)', textAlign: 'right' }}>
+                      Timeline adjustment: <strong style={{ color: 'var(--text)' }}>{replanData.estimatedCompletionAdjustment}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1532,12 +1625,15 @@ function GoalsPage({
           ) : selectedGoal.roadmap?.phases?.length > 0 && sortBy === 'default' ? (
             <div style={{ display: 'grid', gap: '16px' }}>
               {selectedGoal.roadmap.phases.map((phase, index) => {
-                const phasePending = pendingTasks.filter(t => t.phaseId === phase.id || phase.tasks?.some(pt => pt.id === t.id));
-                const phaseDone = doneTasks.filter(t => t.phaseId === phase.id || phase.tasks?.some(pt => pt.id === t.id));
+                const phasePending = pendingTasks.filter(t => t.phaseId === phase.id);
+                const phaseDone = doneTasks.filter(t => t.phaseId === phase.id);
                 if (phasePending.length === 0 && phaseDone.length === 0) return null;
 
+                const unlocked = isPhaseUnlocked(phase, selectedGoal);
+                const opacityStyle = unlocked ? 1 : 0.5;
+
                 return (
-                  <div key={phase.id} className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: `1px solid ${phase.color || 'var(--line)'}` }}>
+                  <div key={phase.id} className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: `1px solid ${phase.color || 'var(--line)'}`, opacity: opacityStyle }}>
                     <div style={{ 
                       padding: '12px 18px', 
                       background: phase.color ? `${phase.color}15` : 'var(--bg-2)', 
@@ -1547,6 +1643,12 @@ function GoalsPage({
                       <div style={{ padding: '2px 8px', borderRadius: '6px', background: phase.color ? `${phase.color}25` : 'var(--panel)', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: phase.color || 'var(--text)' }}>
                         {phase.label}
                       </div>
+                      {!unlocked && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: 'var(--muted)', fontWeight: 600 }}>
+                          <Lock size={12} />
+                          Locked
+                        </div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: 'auto', opacity: 0.6 }}>
                         {index > 0 && (
                           <button onClick={() => movePhase(selectedGoal.id, index, 'up')} className="ghost-btn" style={{ padding: '0', height: '22px', width: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', fontSize: '0.8rem' }}>
@@ -1618,8 +1720,8 @@ function GoalsPage({
               })}
 
               {(() => {
-                const noPhasePending = pendingTasks.filter(t => !selectedGoal.roadmap.phases.some(p => p.id === t.phaseId || p.tasks?.some(pt => pt.id === t.id)));
-                const noPhaseDone = doneTasks.filter(t => !selectedGoal.roadmap.phases.some(p => p.id === t.phaseId || p.tasks?.some(pt => pt.id === t.id)));
+                const noPhasePending = pendingTasks.filter(t => !selectedGoal.roadmap.phases.some(p => p.id === t.phaseId));
+                const noPhaseDone = doneTasks.filter(t => !selectedGoal.roadmap.phases.some(p => p.id === t.phaseId));
 
                 if (noPhasePending.length === 0 && noPhaseDone.length === 0) return null;
 

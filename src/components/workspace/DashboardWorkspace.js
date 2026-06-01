@@ -13,6 +13,7 @@ import UndoToast from '../UndoToast';
 import EndOfDayModal from '../EndOfDayModal';
 import GoalAutopsy from '../GoalAutopsy';
 import PhaseCompleteModal from '../PhaseCompleteModal';
+import ErrorBoundary from '../ErrorBoundary';
 import { useTimer } from '../../context/TimerContext';
 import { AppShell, AuroraLayer, MainPanel, FocusWrap } from '../../styles/AppLayout';
 import { DEFAULT_SETTINGS, NAV_ITEMS, WEEK_DAYS } from '../../data/appData';
@@ -22,10 +23,11 @@ import {
   isTaskActiveOnDate,
   isTaskDoneForDate,
   getTaskLockStatus,
-  isPhaseCompleted,
   prettyDate
 } from '../../utils/dateUtils';
+import { runDailyPruneIfNeeded } from '../../utils/dataPruning';
 import { getNextMidnight, getYesterday, rolloverIncompleteTasks } from '../../utils/taskRollover';
+import { isPhaseComplete } from '../../utils/phaseUtils';
 import { db } from '../../firebase/config';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { playTabSound, playClickSound, playSuccessSound, playUncheckSound } from '../../utils/audio';
@@ -406,6 +408,8 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
         setGoals(rollover.goals);
         persistGoals(rollover.goals);
       }
+      // Prune stale dailyProgress / dailySubtasks entries
+      runDailyPruneIfNeeded(rollover.didUpdate ? rollover.goals : goals, setGoals, persistGoals);
       localStorage.setItem(rolloverKey, todayKeyLocal);
     }
 
@@ -522,6 +526,9 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   }, [completedToday, activeTasksToday.length, todayKey, dailyReflections, isHydrating]);
 
   const handleEndOfDaySave = useCallback(({ mood, reflection }) => {
+    // Import here to avoid circular dependency at top level if any
+    const { isPhaseComplete } = require('../../utils/phaseUtils');
+
     setDailyReflections(prev => [...prev, {
       date: todayKey,
       score: todayScore,
@@ -531,7 +538,46 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       totalTasks: activeTasksToday.length,
       focusMinutes: focusMinutesToday
     }]);
-  }, [todayKey, todayScore, completedToday, activeTasksToday.length, focusMinutesToday]);
+
+    // Check for phase progression
+    let foundCompletedPhase = null;
+    let nextPhaseInfo = null;
+    let foundGoalName = null;
+
+    for (const goal of goals) {
+      if (goal.roadmap?.phases) {
+        for (let i = 0; i < goal.roadmap.phases.length; i++) {
+          const phase = goal.roadmap.phases[i];
+          if (isPhaseComplete(phase, goal)) {
+            const phaseTasks = goal.tasks?.filter(t => t.phaseId === phase.id) || [];
+            const completedToday = phaseTasks.some(t => {
+              if (t.recurrenceType === 'one-time') {
+                return t.updatedAt && t.updatedAt.startsWith(todayKey);
+              }
+              return Array.isArray(t.completedDates) && t.completedDates.includes(todayKey);
+            });
+
+            if (completedToday) {
+              foundGoalName = goal.name;
+              foundCompletedPhase = phase;
+              nextPhaseInfo = goal.roadmap.phases[i + 1] || null;
+            }
+          }
+        }
+      }
+    }
+
+    if (foundCompletedPhase) {
+      setTimeout(() => {
+        setCompletedPhaseInfo({
+          goalName: foundGoalName,
+          completedPhase: foundCompletedPhase,
+          nextPhase: nextPhaseInfo
+        });
+      }, 500); // Slight delay after end of day modal closes
+    }
+
+  }, [todayKey, todayScore, completedToday, activeTasksToday.length, focusMinutesToday, goals]);
 
   // ── Stale Goal Detection (Goal Autopsy) ─────────────────────────
   useEffect(() => {
@@ -683,10 +729,10 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       if (prevGoal && nextGoal.roadmap?.phases) {
         for (const phase of nextGoal.roadmap.phases) {
           const wasCompleted = prevGoal.roadmap?.phases?.find(p => p.id === phase.id)
-            ? isPhaseCompleted(phase, prevGoal, today)
+            ? isPhaseComplete(phase, prevGoal)
             : false;
           
-          const isCompletedNow = isPhaseCompleted(phase, nextGoal, today);
+          const isCompletedNow = isPhaseComplete(phase, nextGoal);
 
           if (isCompletedNow && !wasCompleted) {
             const phaseIndex = nextGoal.roadmap.phases.findIndex(p => p.id === phase.id);
@@ -1310,69 +1356,73 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
             <Route
               path="today"
               element={
-                <TasksPage
-                  user={user}
-                  goals={goals}
-                  setActivePage={handlePageChange}
-                  activeTasksToday={activeTasksToday}
-                  today={today}
-                  getActiveTasksForDate={getActiveTasksForDate}
-                  isTaskActiveOnDate={isTaskActiveOnDate}
-                  isTaskDoneForDate={isTaskDoneForDate}
-                  toggleTaskCompletion={toggleTaskCompletion}
-                  toggleTaskDoneForToday={toggleTaskDoneForToday}
-                  updateTask={updateTask}
-                  deleteTask={deleteTask}
-                  getRecurrenceText={recurrenceText}
-                  prettyDate={prettyDate}
-                  streak={streak}
-                  completionRate={completionRate}
-                  aiEnabled={aiEnabled}
-                  focusMinutesToday={focusMinutesToday}
-                  todayScore={todayScore}
-                  weeklyScores={weeklyScores}
-                  onStartFocus={(taskId, goalId) => {
-                    setActiveTask(taskId);
-                    navigate('/app/focus');
-                  }}
-                />
+                <ErrorBoundary>
+                  <TasksPage
+                    user={user}
+                    goals={goals}
+                    setActivePage={handlePageChange}
+                    activeTasksToday={activeTasksToday}
+                    today={today}
+                    getActiveTasksForDate={getActiveTasksForDate}
+                    isTaskActiveOnDate={isTaskActiveOnDate}
+                    isTaskDoneForDate={isTaskDoneForDate}
+                    toggleTaskCompletion={toggleTaskCompletion}
+                    toggleTaskDoneForToday={toggleTaskDoneForToday}
+                    updateTask={updateTask}
+                    deleteTask={deleteTask}
+                    getRecurrenceText={recurrenceText}
+                    prettyDate={prettyDate}
+                    streak={streak}
+                    completionRate={completionRate}
+                    aiEnabled={aiEnabled}
+                    focusMinutesToday={focusMinutesToday}
+                    todayScore={todayScore}
+                    weeklyScores={weeklyScores}
+                    onStartFocus={(taskId, goalId) => {
+                      setActiveTask(taskId);
+                      navigate('/app/focus');
+                    }}
+                  />
+                </ErrorBoundary>
               }
             />
             <Route
               path="goals"
               element={
-                <GoalsPage
-                  goals={goals}
-                  selectedGoal={selectedGoal}
-                  selectedGoalId={selectedGoalId}
-                  setSelectedGoalId={setSelectedGoalId}
-                  allTaskCount={allTaskCount}
-                  addTaskToGoal={addTaskToGoal}
-                  weekDays={WEEK_DAYS}
-                  isTaskActiveOnDate={isTaskActiveOnDate}
-                  isTaskDoneForDate={isTaskDoneForDate}
-                  toggleTaskDoneForToday={toggleTaskDoneForToday}
-                  getRecurrenceText={recurrenceText}
-                  prettyDate={prettyDate}
-                  today={today}
-                  isGoalModalOpen={isGoalModalOpen}
-                  openGoalModal={openGoalModal}
-                  closeGoalModal={closeGoalModal}
-                  goalName={goalName}
-                  setGoalName={setGoalName}
-                  goalVision={goalVision}
-                  setGoalVision={setGoalVision}
-                  addGoal={addGoal}
-                  theme={theme}
-                  updateTask={updateTask}
-                  deleteTask={deleteTask}
-                  deleteGoal={requestDeleteGoal}
-                  deletePhase={deletePhase}
-                  addPhaseToGoal={addPhaseToGoal}
-                  movePhase={movePhase}
-                  completeGoal={completeGoal}
-                  aiEnabled={aiEnabled}
-                />
+                <ErrorBoundary>
+                  <GoalsPage
+                    goals={goals}
+                    selectedGoal={selectedGoal}
+                    selectedGoalId={selectedGoalId}
+                    setSelectedGoalId={setSelectedGoalId}
+                    allTaskCount={allTaskCount}
+                    addTaskToGoal={addTaskToGoal}
+                    weekDays={WEEK_DAYS}
+                    isTaskActiveOnDate={isTaskActiveOnDate}
+                    isTaskDoneForDate={isTaskDoneForDate}
+                    toggleTaskDoneForToday={toggleTaskDoneForToday}
+                    getRecurrenceText={recurrenceText}
+                    prettyDate={prettyDate}
+                    today={today}
+                    isGoalModalOpen={isGoalModalOpen}
+                    openGoalModal={openGoalModal}
+                    closeGoalModal={closeGoalModal}
+                    goalName={goalName}
+                    setGoalName={setGoalName}
+                    goalVision={goalVision}
+                    setGoalVision={setGoalVision}
+                    addGoal={addGoal}
+                    theme={theme}
+                    updateTask={updateTask}
+                    deleteTask={deleteTask}
+                    deleteGoal={requestDeleteGoal}
+                    deletePhase={deletePhase}
+                    addPhaseToGoal={addPhaseToGoal}
+                    movePhase={movePhase}
+                    completeGoal={completeGoal}
+                    aiEnabled={aiEnabled}
+                  />
+                </ErrorBoundary>
               }
             />
             <Route

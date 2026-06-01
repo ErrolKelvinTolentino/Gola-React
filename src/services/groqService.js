@@ -29,12 +29,20 @@ const safeString = (value, fallback = '') => {
 
 const normalizeMood = (value) => {
   const allowed = ['motivated', 'focused', 'gentle', 'celebratory'];
-  return allowed.includes(value) ? value : 'focused';
+  if (!allowed.includes(value)) {
+    console.warn(`[GroqService] Unexpected mood value: "${value}". Defaulting to "focused".`);
+    return 'focused';
+  }
+  return value;
 };
 
 const normalizeStatus = (value) => {
   const allowed = ['on_track', 'at_risk', 'behind'];
-  return allowed.includes(value) ? value : 'at_risk';
+  if (!allowed.includes(value)) {
+    console.warn(`[GroqService] Unexpected status value: "${value}". Defaulting to "at_risk".`);
+    return 'at_risk';
+  }
+  return value;
 };
 
 function extractJsonPayload(rawText) {
@@ -43,15 +51,32 @@ function extractJsonPayload(rawText) {
     .replace(/```\s*/g, '')
     .trim();
 
+  let firstError = null;
+
   try {
     return JSON.parse(cleaned);
-  } catch (_error) {
+  } catch (error) {
+    firstError = error;
     const objectStart = cleaned.indexOf('{');
     const objectEnd = cleaned.lastIndexOf('}');
+    
     if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
-      return JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
+      try {
+        return JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
+      } catch (innerError) {
+        console.error('[extractJsonPayload] Initial parse error:', firstError.message);
+        console.error('[extractJsonPayload] Fallback parse error:', innerError.message);
+        console.error('[extractJsonPayload] Raw text (first 500 chars):', rawText.slice(0, 500));
+        
+        throw new Error(
+          `Groq returned invalid JSON. Parse errors: "${firstError.message}" then "${innerError.message}". ` +
+          `Raw preview: ${rawText.slice(0, 200)}...`
+        );
+      }
     }
-    throw new Error('Groq returned invalid JSON.');
+    
+    console.error('[extractJsonPayload] No JSON object found. Raw text:', rawText.slice(0, 500));
+    throw new Error(`Groq returned invalid JSON: ${firstError.message}. Raw preview: ${rawText.slice(0, 200)}...`);
   }
 }
 
@@ -145,6 +170,22 @@ function toFriendlyGroqError(statusCode, modelName, parsedMessage, parsedStatus)
   return new Error(`Groq API error ${statusCode} (${modelName}): ${parsedMessage}`);
 }
 
+const MAX_PROMPT_LENGTH = 8000;
+
+function truncatePrompt(prompt, maxLength = MAX_PROMPT_LENGTH) {
+  if (prompt.length <= maxLength) return prompt;
+  const truncated = prompt.slice(0, maxLength - 100) + 
+    '\n\n[... Content truncated to stay within model limits ...]';
+  console.warn(`[GroqService] Prompt truncated from ${prompt.length} to ${maxLength} chars`);
+  return truncated;
+}
+
+/**
+ * In-flight request deduplication map.
+ * If the same prompt+instruction is called concurrently, they share one request.
+ */
+const inflightRequests = new Map();
+
 /**
  * Base wrapper for Groq API calls.
  * Sends a structured prompt with system instruction and returns parsed JSON.
@@ -154,87 +195,104 @@ export async function callGroq(prompt, systemInstruction) {
     throw new Error('Groq API key not configured');
   }
 
-  let lastError = null;
-
-  for (const modelName of GROQ_MODELS) {
-    for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt += 1) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-      try {
-        const requestBody = {
-          model: modelName,
-          messages: [
-            { role: 'system', content: systemInstruction },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 4096
-        };
-
-        const response = await fetch(GROQ_ENDPOINT_BASE, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${GROQ_API_KEY}`
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          const parsed = parseGroqError(errorText);
-          const quotaExhausted = isHardQuotaExhausted(response.status, parsed.message, parsed.status);
-          const canRetry = RETRYABLE_STATUS_CODES.includes(response.status);
-
-          if (!quotaExhausted && canRetry && attempt < MAX_RETRIES_PER_MODEL) {
-            const backoffMs = 500 * Math.pow(2, attempt);
-            await wait(backoffMs);
-            continue;
-          }
-
-          lastError = toFriendlyGroqError(response.status, modelName, parsed.message, parsed.status);
-
-          if (quotaExhausted) {
-            throw lastError;
-          }
-
-          break;
-        }
-
-        const data = await response.json();
-        const rawText = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text;
-
-        if (!rawText) {
-          throw new Error(`Empty response from Groq API (${modelName}).`);
-        }
-
-        return extractJsonPayload(rawText);
-      } catch (error) {
-        if (error.name === 'AbortError') {
-          if (attempt < MAX_RETRIES_PER_MODEL) {
-            const backoffMs = 500 * Math.pow(2, attempt);
-            await wait(backoffMs);
-            continue;
-          }
-          lastError = new Error(`Groq request timed out (${modelName}).`);
-        } else {
-          lastError = error;
-          if (attempt < MAX_RETRIES_PER_MODEL) {
-            const backoffMs = 500 * Math.pow(2, attempt);
-            await wait(backoffMs);
-            continue;
-          }
-        }
-        break;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    }
+  // Deduplication key — same prompt+instruction shares one in-flight request
+  const dedupeKey = `${systemInstruction.slice(0, 80)}::${prompt.slice(0, 120)}`;
+  if (inflightRequests.has(dedupeKey)) {
+    return inflightRequests.get(dedupeKey);
   }
 
-  throw lastError || new Error('Groq request failed across all configured models.');
+  let lastError = null;
+
+  const requestPromise = (async () => {
+    for (const modelName of GROQ_MODELS) {
+      for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt += 1) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+        try {
+          const safePrompt = truncatePrompt(prompt);
+          const safeSystem = truncatePrompt(systemInstruction, 4000);
+          
+          const requestBody = {
+            model: modelName,
+            messages: [
+              { role: 'system', content: safeSystem },
+              { role: 'user', content: safePrompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 4096
+          };
+
+          const response = await fetch(GROQ_ENDPOINT_BASE, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${GROQ_API_KEY}`
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            const parsed = parseGroqError(errorText);
+            const quotaExhausted = isHardQuotaExhausted(response.status, parsed.message, parsed.status);
+            const canRetry = RETRYABLE_STATUS_CODES.includes(response.status);
+
+            if (!quotaExhausted && canRetry && attempt < MAX_RETRIES_PER_MODEL) {
+              const backoffMs = 500 * Math.pow(2, attempt);
+              await wait(backoffMs);
+              continue;
+            }
+
+            lastError = toFriendlyGroqError(response.status, modelName, parsed.message, parsed.status);
+
+            if (quotaExhausted) {
+              throw lastError;
+            }
+
+            break;
+          }
+
+          const data = await response.json();
+          const rawText = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.text || data?.output_text;
+
+          if (!rawText) {
+            throw new Error(`Empty response from Groq API (${modelName}).`);
+          }
+
+          return extractJsonPayload(rawText);
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            if (attempt < MAX_RETRIES_PER_MODEL) {
+              const backoffMs = 500 * Math.pow(2, attempt);
+              await wait(backoffMs);
+              continue;
+            }
+            lastError = new Error(`Groq request timed out (${modelName}).`);
+          } else {
+            lastError = error;
+            if (attempt < MAX_RETRIES_PER_MODEL) {
+              const backoffMs = 500 * Math.pow(2, attempt);
+              await wait(backoffMs);
+              continue;
+            }
+          }
+          break;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }
+    }
+
+    throw lastError || new Error('Groq request failed across all configured models.');
+  })();
+
+  // Store and clean up deduplication entry
+  inflightRequests.set(dedupeKey, requestPromise);
+  requestPromise.finally(() => inflightRequests.delete(dedupeKey));
+
+  return requestPromise;
 }
 
 /**
@@ -360,6 +418,14 @@ CRITICAL RULES — YOU MUST FOLLOW ALL OF THEM:
    - "1h" = Deep learning, comprehensive review
    - "2h+" = Intensive sessions, major milestones
 
+11. LIFECYCLE FIELDS:
+   - "targetCount": For daily/weekly tasks, how many completions signify "graduation" (e.g., 30 for a 30-day habit).
+   - "endDate": YYYY-MM-DD when this task naturally expires.
+   - "isPriority": true if this is a high-leverage key task.
+   - "predecessorTitle": If this task depends on another task being completed first, put that task's title here.
+   - "evolvedFrom": If this habit is a harder version of an earlier phase habit, put the old title here.
+   - "evolvesTo": If this habit will become something harder in a later phase, put the future title here.
+
 EXAMPLE OF A WELL-DISTRIBUTED WEEK:
 - Weekly task 1: weeklyDay=1 (Monday)
 - Weekly task 2: weeklyDay=3 (Wednesday)
@@ -392,7 +458,13 @@ Return JSON with this exact schema:
           "weeklyDay": 0,
           "completionType": "binary|quantity|subtasks|scale|multistate",
           "targetValue": number,
-          "subtasks": ["string", "string"]
+          "subtasks": ["string", "string"],
+          "targetCount": number,
+          "endDate": "YYYY-MM-DD or empty string",
+          "isPriority": boolean,
+          "predecessorTitle": "string or empty",
+          "evolvedFrom": "string or empty",
+          "evolvesTo": "string or empty"
         }
       ]
     }
@@ -451,8 +523,11 @@ Generate a personalized, domain-specific roadmap for this goal NOW.`;
  * Generate a personalized morning briefing based on today's tasks and progress.
  */
 export async function generateMorningBriefing(todayTasks, goals, completionRate, streak) {
+  const todayDate = new Date();
+  const todayLabel = todayDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
   const taskSummary = todayTasks.slice(0, 10).map(t => {
-    const isCompleted = isTaskDoneForDate(t.task, new Date());
+    const isCompleted = isTaskDoneForDate(t.task, todayDate);
     const status = isCompleted ? 'COMPLETED' : 'PENDING';
     return `- "${t.task.title}" [Status: ${status}] (${t.goalName}, ${t.task.energy || 'Medium'} energy, ${t.task.timeEstimate || '30m'})`;
   }).join('\n');
@@ -471,6 +546,7 @@ RULES:
 - If ALL tasks are already COMPLETED (or if completion rate is 100%), congratulate the user warmly on completing everything scheduled for today, celebrate their productivity, and encourage them to rest, review their goals, or plan for tomorrow. In this case, "suggestedFirstTask" MUST be null and the mood should be "celebratory".
 - Set an appropriate mood: "motivated" for busy days, "focused" for moderate days, "gentle" for light days, "celebratory" for high streaks or high completion (100% completion rate).
 - Keep the greeting contextual (time of day, workload, or completion state).
+- Today's date is provided. Do not guess or assume the date.
 
 Return JSON with this exact schema:
 {
@@ -480,7 +556,9 @@ Return JSON with this exact schema:
   "mood": "motivated|focused|gentle|celebratory"
 }`;
 
-  const prompt = `Today's tasks (${todayTasks.length} total):
+  const prompt = `Today is ${todayLabel}.
+
+Today's tasks (${todayTasks.length} total):
 ${taskSummary || 'No tasks scheduled today'}
 
 Active goals:
@@ -615,6 +693,12 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
         progressMinutes: 0,
         order: taskIdx,
         phaseId,
+        targetCount: typeof task.targetCount === 'number' ? task.targetCount : null,
+        endDate: task.endDate || null,
+        isPriority: !!task.isPriority,
+        predecessorTitle: task.predecessorTitle || null,
+        evolvedFrom: task.evolvedFrom || null,
+        evolvesTo: task.evolvesTo || null,
         completed: false,
         completedDates: []
       };
@@ -632,6 +716,25 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
 
   const allTasks = phases.flatMap(p => p.tasks);
 
+  // Resolve IDs based on titles
+  for (const task of allTasks) {
+    if (task.predecessorTitle) {
+      const pTask = allTasks.find(t => t.title.toLowerCase() === task.predecessorTitle.toLowerCase());
+      if (pTask) task.predecessorId = pTask.id;
+      delete task.predecessorTitle;
+    }
+    if (task.evolvedFrom) {
+      const pTask = allTasks.find(t => t.title.toLowerCase() === task.evolvedFrom.toLowerCase());
+      if (pTask) task.evolvedFromId = pTask.id;
+      delete task.evolvedFrom;
+    }
+    if (task.evolvesTo) {
+      const pTask = allTasks.find(t => t.title.toLowerCase() === task.evolvesTo.toLowerCase());
+      if (pTask) task.evolvesToId = pTask.id;
+      delete task.evolvesTo;
+    }
+  }
+
   const stats = {
     totalTasks: allTasks.length,
     oneTimeTasks: allTasks.filter(t => t.recurrenceType === 'one-time').length,
@@ -648,6 +751,84 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
   };
 
   return { summary, phases, allTasks, stats, isAiGenerated: true };
+}
+
+/**
+ * Generate an adaptive replan for a specific goal based on current progress.
+ * Returns phase/task-level adjustments: reschedule, remove, add, adjust.
+ */
+export async function generateAdaptiveReplan(goal, progressSummary) {
+  const phases = goal.roadmap?.phases || [];
+  const tasks = goal.tasks || [];
+
+  const phaseDetails = phases.map((phase, idx) => {
+    const phaseTasks = tasks.filter(t => t.phaseId === phase.id);
+    const done = phaseTasks.filter(t => t.completed || (t._graduated) || (Array.isArray(t.completedDates) && t.completedDates.length > 0));
+    return `Phase ${idx + 1}: "${phase.label}" — ${done.length}/${phaseTasks.length} tasks complete`;
+  }).join('\n');
+
+  const taskDetails = tasks.slice(0, 20).map(t => {
+    const completions = Array.isArray(t.completedDates) ? t.completedDates.length : 0;
+    const status = t.completed || t._graduated ? 'DONE' : completions > 0 ? `IN_PROGRESS (${completions} completions)` : 'NOT_STARTED';
+    return `- "${t.title}" [${t.recurrenceType}] [${status}] energy=${t.energy || 'Medium'} time=${t.timeEstimate || '30m'}`;
+  }).join('\n');
+
+  const systemInstruction = `You are Gola, an AI productivity coach specializing in goal replanning. Analyze a user's goal progress and suggest concrete, actionable adjustments.
+
+RULES:
+- Be encouraging but honest about gaps and opportunities.
+- Suggest no more than 3-5 adjustments total.
+- Focus on the most impactful changes first.
+- Each suggestion must have a clear rationale tied to the actual data.
+- Adjustment types: "reschedule" (change timing), "reduce_scope" (simplify a task), "add_checkpoint" (add a milestone), "graduate_habit" (mark habit as complete), "reorder" (change phase ordering).
+
+Return JSON with this exact schema:
+{
+  "summary": "2-3 sentence overall assessment",
+  "suggestions": [
+    {
+      "type": "reschedule|reduce_scope|add_checkpoint|graduate_habit|reorder",
+      "taskTitle": "exact task title or null",
+      "phaseLabel": "phase label or null",
+      "rationale": "why this change is recommended",
+      "action": "specific, actionable instruction for the user"
+    }
+  ],
+  "overallHealth": "on_track|at_risk|behind",
+  "estimatedCompletionAdjustment": "e.g. +2 weeks, no change, -1 week"
+}`;
+
+  const prompt = `Goal: "${goal.name}"
+Vision: "${goal.vision || 'Not specified'}"
+Original deadline: "${goal.deadline || 'Flexible'}"
+
+Phase progress:
+${phaseDetails || 'No phases'}
+
+Task details:
+${taskDetails || 'No tasks'}
+
+Overall stats:
+${progressSummary || 'No additional stats'}
+
+Analyze this goal and suggest adjustments to get back on track or optimize progress.`;
+
+  const response = await callGroq(prompt, systemInstruction);
+
+  const suggestions = Array.isArray(response?.suggestions) ? response.suggestions : [];
+
+  return {
+    summary: safeString(response?.summary, 'Your goal progress has been analyzed.'),
+    suggestions: suggestions.map(s => ({
+      type: safeString(s?.type, 'reschedule'),
+      taskTitle: typeof s?.taskTitle === 'string' ? s.taskTitle : null,
+      phaseLabel: typeof s?.phaseLabel === 'string' ? s.phaseLabel : null,
+      rationale: safeString(s?.rationale, ''),
+      action: safeString(s?.action, '')
+    })),
+    overallHealth: ['on_track', 'at_risk', 'behind'].includes(response?.overallHealth) ? response.overallHealth : 'at_risk',
+    estimatedCompletionAdjustment: safeString(response?.estimatedCompletionAdjustment, 'no change')
+  };
 }
 
 /**

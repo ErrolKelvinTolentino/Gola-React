@@ -20,6 +20,7 @@ import {
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { addDays, getDateKey, isTaskActiveOnDate as isTaskActiveOnDateUtil, getTaskLockStatus } from '../utils/dateUtils';
 import MorningBriefing from '../components/MorningBriefing';
+import ErrorBoundary from '../components/ErrorBoundary';
 import TodayScore from '../components/TodayScore';
 import CapacityWarning from '../components/CapacityWarning';
 import { getRecommendedTask } from '../services/recommendationEngine';
@@ -682,6 +683,13 @@ function TasksPage({
       updatedAt: new Date().toISOString()
     };
 
+    // Task 3.2: Reset daily subtask state for the from-date so new date starts fresh
+    if (task.recurrenceType !== 'one-time' && task.dailySubtasks?.[fromKey]) {
+      const freshDailySubtasks = { ...(task.dailySubtasks || {}) };
+      delete freshDailySubtasks[fromKey];
+      updates.dailySubtasks = freshDailySubtasks;
+    }
+
     if (task.recurrenceType === 'one-time') {
       updates.oneTimeDate = newDateKey;
       updates.completed = false;
@@ -804,15 +812,17 @@ function TasksPage({
         </div>
       ) : (
         <>
-          <MorningBriefing
-            user={user}
-            todayTasks={activeTasksToday || []}
-            goals={goals || []}
-            completionRate={completionRate}
-            streak={streak || 0}
-            aiEnabled={aiEnabled}
-            onStartTask={onStartFocus}
-          />
+          <ErrorBoundary>
+            <MorningBriefing
+              user={user}
+              todayTasks={activeTasksToday || []}
+              goals={goals || []}
+              completionRate={completionRate}
+              streak={streak || 0}
+              aiEnabled={aiEnabled}
+              onStartTask={onStartFocus}
+            />
+          </ErrorBoundary>
 
       {/* ── Today Score ──────────────────────────────────────────── */}
       {isToday && todayScore !== undefined && (
