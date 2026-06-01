@@ -49,7 +49,6 @@ function Sidebar({ navItems, activePage, onChangePage }) {
           {!isCollapsed && <strong className="brand-name">GOLA</strong>}
         </div>
 
-        {/* Desktop collapse button — only visible on desktop */}
         <button
           type="button"
           className="ghost-btn sidebar-collapse-btn"
@@ -60,7 +59,11 @@ function Sidebar({ navItems, activePage, onChangePage }) {
             flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            minWidth: '0',
+            minHeight: '0',
+            width: '32px',
+            height: '32px'
           }}
           title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
           aria-label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}

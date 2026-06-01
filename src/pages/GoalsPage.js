@@ -2,11 +2,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Target, RotateCw, Calendar as CalendarIcon, CheckCircle2, Cpu,
-  Edit2, Trophy, Plus, Search, X, Flame, Zap, Clock, BookOpen, Star
+  Edit2, Trophy, Plus, Search, X, Flame, Zap, Clock, BookOpen, Star, Trash2, Lock
 } from 'lucide-react';
 import { DEFAULT_TASK_FORM } from '../data/appData';
-import { GOAL_TEMPLATES } from '../data/goalTemplates';
-import { getGoalProgress, getDateKey } from '../utils/dateUtils';
+import { getGoalProgress, getDateKey, addDays, getTaskLockStatus } from '../utils/dateUtils';
 import AiGoalWizard from '../components/AiGoalWizard';
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -26,15 +25,32 @@ function ModalOverlay({ onClose, children }) {
 /* ═══════════════════════════════════════════════════════════════════
    GoalTaskForm — 3-step wizard for adding/editing a single task
 ═══════════════════════════════════════════════════════════════════ */
-function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isEdit, toggleSpecificDayHandler, phases = [] }) {
+function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isEdit, toggleSpecificDayHandler, phases = [], goalTasks = [] }) {
   const [step, setStep] = useState(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [subtaskText, setSubtaskText] = useState('');
 
   const handleSubmit = e => {
     e.preventDefault();
     if (step < 3) return setStep(s => s + 1);
     onSubmit(e);
   };
+
+  const handleAddSubtask = () => {
+    if (!subtaskText.trim()) return;
+    const currentSubtasks = form.subtasks || [];
+    const nextSubtasks = [...currentSubtasks, { id: `sub-${Date.now()}`, title: subtaskText.trim(), completed: false }];
+    onChange({ subtasks: nextSubtasks });
+    setSubtaskText('');
+  };
+
+  const handleRemoveSubtask = (id) => {
+    const currentSubtasks = form.subtasks || [];
+    const nextSubtasks = currentSubtasks.filter(s => s.id !== id);
+    onChange({ subtasks: nextSubtasks });
+  };
+
+  const otherTasks = (goalTasks || []).filter(t => !isEdit || t.id !== form.id);
 
   const cadenceLabel = form.recurrenceType === 'one-time'
     ? 'One-time milestone'
@@ -55,15 +71,37 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
 
       {step === 1 && (
         <>
-          <input
-            type="text"
-            placeholder="Task title"
-            value={form.title}
-            onChange={e => onChange({ title: e.target.value })}
-            required
-            autoFocus
-            style={{ fontSize: '1rem', padding: '12px 16px' }}
-          />
+          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+            <input
+              type="text"
+              placeholder="Task title"
+              value={form.title}
+              onChange={e => onChange({ title: e.target.value })}
+              required
+              autoFocus
+              style={{ fontSize: '1rem', padding: '12px 16px', flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={() => onChange({ isPriority: !form.isPriority })}
+              style={{
+                background: form.isPriority ? 'rgba(245, 158, 11, 0.15)' : 'var(--panel)',
+                border: `1px solid ${form.isPriority ? '#f59e0b' : 'var(--line)'}`,
+                borderRadius: '12px',
+                width: '46px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: form.isPriority ? '#f59e0b' : 'var(--muted)',
+                transition: 'all 0.3s ease'
+              }}
+              title={form.isPriority ? "High Priority" : "Mark as Priority"}
+            >
+              <Star size={20} fill={form.isPriority ? '#f59e0b' : 'none'} />
+            </button>
+          </div>
+
           {phases.length > 0 && (
             <select value={form.phaseId || ''} onChange={e => onChange({ phaseId: e.target.value })} style={{ fontSize: '0.9rem', padding: '10px 14px' }}>
               <option value="">No phase</option>
@@ -72,6 +110,95 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
               ))}
             </select>
           )}
+
+          {otherTasks.length > 0 && (
+            <div style={{ display: 'grid', gap: '4px' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>Predecessor (Locks task until done)</label>
+              <select 
+                value={form.predecessorId || ''} 
+                onChange={e => onChange({ predecessorId: e.target.value || null })}
+                style={{ fontSize: '0.9rem', padding: '10px 14px' }}
+              >
+                <option value="">No predecessor (Always unlocked)</option>
+                {otherTasks.map(t => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gap: '4px' }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>Completion Type</label>
+            <select
+              value={form.completionType || 'binary'}
+              onChange={e => onChange({ 
+                completionType: e.target.value, 
+                targetValue: e.target.value === 'quantity' ? 10 : null, 
+                subtasks: e.target.value === 'subtasks' ? (form.subtasks || []) : [] 
+              })}
+              style={{ fontSize: '0.9rem', padding: '10px 14px' }}
+            >
+              <option value="binary">Standard Checkbox</option>
+              <option value="quantity">Quantity Counter</option>
+              <option value="subtasks">Subtask Checklist</option>
+              <option value="scale">Qualitative Scale (1-5 Stars)</option>
+              <option value="multistate">Multi-State Badge</option>
+            </select>
+          </div>
+
+          {form.completionType === 'quantity' && (
+            <div style={{ display: 'grid', gap: '4px' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>
+                Target Quantity
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="E.g. 10"
+                value={form.targetValue || ''}
+                onChange={e => onChange({ targetValue: Math.max(1, Number(e.target.value) || 10) })}
+                style={{ fontSize: '0.9rem', padding: '10px 14px' }}
+                required
+              />
+            </div>
+          )}
+
+          {form.completionType === 'subtasks' && (
+            <div style={{ display: 'grid', gap: '8px' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--muted)', fontWeight: 600 }}>Subtask Checklist</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input 
+                  type="text" 
+                  placeholder="Add a subtask..." 
+                  value={subtaskText} 
+                  onChange={e => setSubtaskText(e.target.value)} 
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
+                  style={{ flex: 1, padding: '8px 12px', fontSize: '0.9rem' }}
+                />
+                <button 
+                  type="button" 
+                  onClick={handleAddSubtask} 
+                  className="ghost-btn" 
+                  style={{ padding: '8px 16px', background: 'var(--panel)', border: '1px solid var(--line)' }}
+                >
+                  Add
+                </button>
+              </div>
+              {form.subtasks && form.subtasks.length > 0 && (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '120px', overflowY: 'auto' }}>
+                  {form.subtasks.map(s => (
+                    <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-2)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '0.85rem' }}>
+                      <span>{s.title}</span>
+                      <button type="button" onClick={() => handleRemoveSubtask(s.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px' }}>
+                        <X size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <select value={form.timeEstimate || '30m'} onChange={e => onChange({ timeEstimate: e.target.value })}>
               <option value="15m">15 min</option>
@@ -97,6 +224,59 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
             <option value="specific-days">Specific days</option>
           </select>
           <input type="date" value={form.deadline || ''} onChange={e => onChange({ deadline: e.target.value })} />
+
+          {form.recurrenceType !== 'one-time' && (
+            <div style={{ display: 'grid', gap: '8px', padding: '12px', background: 'var(--bg-2)', borderRadius: '12px', border: '1px solid var(--line)', marginTop: '4px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text)' }}>Habit End Condition / Lifespan</span>
+              
+              <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <input 
+                    type="radio" 
+                    name="endCondition" 
+                    checked={!!form.targetCount} 
+                    onChange={() => onChange({ endDate: null, targetCount: 5 })} 
+                  />
+                  Target Completions (e.g. 5 times)
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <input 
+                    type="radio" 
+                    name="endCondition" 
+                    checked={!!form.endDate} 
+                    onChange={() => onChange({ endDate: getDateKey(addDays(new Date(), 7)), targetCount: null })} 
+                  />
+                  Specific End Date (e.g. until next week)
+                </label>
+              </div>
+
+              {!!form.endDate && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>End Date:</span>
+                  <input 
+                    type="date" 
+                    value={form.endDate} 
+                    onChange={e => onChange({ endDate: e.target.value })} 
+                    style={{ fontSize: '0.85rem', padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--line)', color: 'var(--text)', background: 'var(--bg)' }}
+                  />
+                </div>
+              )}
+
+              {!!form.targetCount && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Target completions:</span>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    value={form.targetCount} 
+                    onChange={e => onChange({ targetCount: Math.max(1, Number(e.target.value) || 1) })} 
+                    style={{ fontSize: '0.85rem', padding: '6px 10px', width: '80px', borderRadius: '8px', border: '1px solid var(--line)', textAlign: 'center', color: 'var(--text)', background: 'var(--bg)' }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           <button type="button" className="ghost-btn" onClick={() => setShowAdvanced(s => !s)}
             style={{ justifySelf: 'start', fontSize: '0.82rem' }}>
             {showAdvanced ? 'Hide details' : 'Show details'}
@@ -134,7 +314,10 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
         <div style={{ display: 'grid', gap: '8px', padding: '14px', background: 'var(--bg-2)', borderRadius: '12px', border: '1px solid var(--line)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
             <span style={{ color: 'var(--muted)' }}>Title</span>
-            <span style={{ fontWeight: 600 }}>{form.title || 'Untitled'}</span>
+            <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {form.isPriority && <Star size={14} fill="#f59e0b" color="#f59e0b" />}
+              {form.title || 'Untitled'}
+            </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
             <span style={{ color: 'var(--muted)' }}>Effort</span>
@@ -144,6 +327,24 @@ function GoalTaskForm({ title, form, onChange, onSubmit, onCancel, weekDays, isE
             <span style={{ color: 'var(--muted)' }}>Schedule</span>
             <span style={{ fontWeight: 600 }}>{cadenceLabel}</span>
           </div>
+          {form.subtasks && form.subtasks.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--muted)' }}>Checklist</span>
+              <span style={{ fontWeight: 600 }}>{form.subtasks.length} items</span>
+            </div>
+          )}
+          {form.endDate && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--muted)' }}>Ends On</span>
+              <span style={{ fontWeight: 600 }}>{form.endDate}</span>
+            </div>
+          )}
+          {form.targetCount && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--muted)' }}>Target Reps</span>
+              <span style={{ fontWeight: 600 }}>{form.targetCount} completions</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -266,76 +467,458 @@ function parseTimeEstimate(value) {
   return Number.isFinite(asNumber) ? asNumber : 30;
 }
 
-function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, dense }) {
+function BinaryControl({ isCompleted, isLocked, onToggle, goalId, taskId }) {
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '12px', alignItems: 'center',
-      padding: dense ? '10px 14px' : '14px 18px',
-      background: isDoneToday ? 'var(--bg-2)' : 'transparent',
-      borderBottom: '1px solid var(--line)',
-      opacity: isDoneToday ? 0.6 : 1,
-      transition: 'background 0.15s ease, opacity 0.15s ease'
-    }}>
-      <input type="checkbox" checked={isDoneToday} onChange={() => onToggle(goalId, task.id)}
-        style={{ width: '20px', height: '20px', cursor: 'pointer', accentColor: 'var(--accent)' }} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{
-          fontSize: dense ? '0.88rem' : '0.95rem', fontWeight: 600,
-          textDecoration: isDoneToday ? 'line-through' : 'none',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-        }}>{task.title}</div>
-        {task.description && (
+    <input
+      type="checkbox"
+      checked={isCompleted}
+      onChange={() => !isLocked && onToggle(goalId, taskId)}
+      disabled={isLocked}
+      style={{ width: '20px', height: '20px', marginRight: '6px', cursor: isLocked ? 'not-allowed' : 'pointer', accentColor: 'var(--accent)' }}
+    />
+  );
+}
+
+function QuantityControl({ task, goalId, dateKey, isLocked, updateTask, isOneTime, isCompleted }) {
+  const currentVal = isOneTime ? (task.currentValue || 0) : (task.dailyProgress?.[dateKey] || 0);
+  const targetVal = task.targetValue || 10;
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(currentVal);
+
+  const handleIncrement = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const nextVal = currentVal + 1;
+    if (isOneTime) {
+      updateTask(goalId, task.id, { currentValue: nextVal });
+    } else {
+      const dailyProgress = { ...(task.dailyProgress || {}) };
+      dailyProgress[dateKey] = nextVal;
+      updateTask(goalId, task.id, { dailyProgress });
+    }
+  };
+
+  const handleDecrement = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const nextVal = Math.max(0, currentVal - 1);
+    if (isOneTime) {
+      updateTask(goalId, task.id, { currentValue: nextVal });
+    } else {
+      const dailyProgress = { ...(task.dailyProgress || {}) };
+      dailyProgress[dateKey] = nextVal;
+      updateTask(goalId, task.id, { dailyProgress });
+    }
+  };
+
+  const handleSaveInput = () => {
+    setEditing(false);
+    const parsed = Math.max(0, parseInt(inputVal, 10) || 0);
+    if (isOneTime) {
+      updateTask(goalId, task.id, { currentValue: parsed });
+    } else {
+      const dailyProgress = { ...(task.dailyProgress || {}) };
+      dailyProgress[dateKey] = parsed;
+      updateTask(goalId, task.id, { dailyProgress });
+    }
+  };
+
+  return (
+    <div 
+      style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '6px', userSelect: 'none' }}
+      onClick={e => { e.stopPropagation(); e.preventDefault(); }}
+    >
+      <button
+        type="button"
+        onClick={handleDecrement}
+        disabled={isLocked || currentVal === 0}
+        className="ghost-btn"
+        style={{ padding: '0 6px', fontSize: '0.8rem', minHeight: '0', height: '22px', display: 'flex', alignItems: 'center', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '4px', cursor: isLocked || currentVal === 0 ? 'not-allowed' : 'pointer' }}
+      >
+        -
+      </button>
+      {editing ? (
+        <input
+          type="number"
+          value={inputVal}
+          onChange={e => setInputVal(e.target.value)}
+          onBlur={handleSaveInput}
+          onKeyDown={e => { if (e.key === 'Enter') handleSaveInput(); }}
+          autoFocus
+          style={{ width: '36px', padding: '1px', fontSize: '0.8rem', textAlign: 'center', background: 'var(--bg-2)', border: '1px solid var(--accent)', borderRadius: '4px', color: 'var(--text)' }}
+        />
+      ) : (
+        <span
+          onDoubleClick={() => { if (!isLocked) { setEditing(true); setInputVal(currentVal); } }}
+          style={{
+            fontSize: '0.82rem',
+            fontWeight: 700,
+            minWidth: '40px',
+            textAlign: 'center',
+            color: isCompleted ? 'var(--good)' : 'var(--text)',
+            cursor: isLocked ? 'default' : 'pointer'
+          }}
+          title="Double-click to edit"
+        >
+          {currentVal}/{targetVal}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={handleIncrement}
+        disabled={isLocked}
+        className="ghost-btn"
+        style={{ padding: '0 6px', fontSize: '0.8rem', minHeight: '0', height: '22px', display: 'flex', alignItems: 'center', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: '4px', cursor: isLocked ? 'not-allowed' : 'pointer' }}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+
+
+function ScaleControl({ task, goalId, dateKey, isLocked, updateTask, isOneTime }) {
+  const currentVal = isOneTime ? (task.currentValue || 0) : (task.dailyProgress?.[dateKey] || 0);
+  return (
+    <div 
+      style={{ display: 'flex', gap: '2px', marginRight: '6px' }}
+      onClick={e => { e.stopPropagation(); e.preventDefault(); }}
+    >
+      {[1, 2, 3, 4, 5].map(rating => (
+        <button
+          key={rating}
+          type="button"
+          disabled={isLocked}
+          onClick={() => {
+            const newVal = currentVal === rating ? 0 : rating;
+            if (isOneTime) {
+              updateTask(goalId, task.id, { currentValue: newVal });
+            } else {
+              const dailyProgress = { ...(task.dailyProgress || {}) };
+              dailyProgress[dateKey] = newVal;
+              updateTask(goalId, task.id, { dailyProgress });
+            }
+          }}
+          style={{ background: 'transparent', border: 'none', padding: '1px', cursor: isLocked ? 'not-allowed' : 'pointer' }}
+        >
+          <Star
+            size={15}
+            fill={rating <= currentVal ? '#f59e0b' : 'none'}
+            color={rating <= currentVal ? '#f59e0b' : 'var(--muted)'}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MultistateControl({ task, goalId, dateKey, isLocked, updateTask, isOneTime }) {
+  const currentVal = isOneTime ? (task.currentValue || 0) : (task.dailyProgress?.[dateKey] || 0);
+  const labels = ['Todo', 'Progress', 'Blocked', 'Done'];
+  const colors = [
+    { border: '1px solid var(--muted)', color: 'var(--muted)', bg: 'transparent' },
+    { border: '1px solid #3b82f6', color: '#fff', bg: '#3b82f6' },
+    { border: '1px solid #f59e0b', color: '#fff', bg: '#f59e0b' },
+    { border: '1px solid #10b981', color: '#fff', bg: '#10b981' }
+  ];
+  const currentStyle = colors[currentVal] || colors[0];
+
+  const cycleState = () => {
+    if (isLocked) return;
+    const nextVal = (currentVal + 1) % 4;
+    if (isOneTime) {
+      updateTask(goalId, task.id, { currentValue: nextVal, stateLabel: labels[nextVal] });
+    } else {
+      const dailyProgress = { ...(task.dailyProgress || {}) };
+      dailyProgress[dateKey] = nextVal;
+      updateTask(goalId, task.id, { dailyProgress, stateLabel: labels[nextVal] });
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={cycleState}
+      disabled={isLocked}
+      style={{
+        padding: '2px 6px',
+        borderRadius: '4px',
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        background: currentStyle.bg,
+        color: currentStyle.color,
+        border: currentStyle.border,
+        cursor: isLocked ? 'not-allowed' : 'pointer',
+        marginRight: '6px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      {labels[currentVal]}
+    </button>
+  );
+}
+
+function InteractiveControl({ task, goalId, dateKey, isLocked, updateTask, onToggle }) {
+  const isOneTime = task.recurrenceType === 'one-time';
+  const type = task.completionType || 'binary';
+
+  const isCompleted = isOneTime
+    ? (type === 'quantity' ? (task.currentValue || 0) >= (task.targetValue || 10)
+       : type === 'duration' ? (task.currentValue || 0) >= (task.targetValue || 30)
+       : type === 'subtasks' ? Array.isArray(task.subtasks) && task.subtasks.length > 0 && task.subtasks.every(s => s.completed)
+       : type === 'scale' ? (task.currentValue || 0) > 0
+       : type === 'multistate' ? task.currentValue === 3
+       : task.completed)
+    : (type === 'quantity' ? (task.dailyProgress?.[dateKey] || 0) >= (task.targetValue || 10)
+       : type === 'duration' ? (task.dailyProgress?.[dateKey] || 0) >= (task.targetValue || 30)
+       : type === 'subtasks' ? (() => { const subList = task.dailySubtasks?.[dateKey] || task.subtasks || []; return Array.isArray(subList) && subList.length > 0 && subList.every(s => s.completed); })()
+       : type === 'scale' ? (task.dailyProgress?.[dateKey] || 0) > 0
+       : type === 'multistate' ? task.dailyProgress?.[dateKey] === 3
+       : Array.isArray(task.completedDates) && task.completedDates.includes(dateKey));
+
+  if (type === 'binary') {
+    return (
+      <BinaryControl isCompleted={isCompleted} isLocked={isLocked} onToggle={onToggle} goalId={goalId} taskId={task.id} />
+    );
+  }
+
+  if (type === 'quantity') {
+    return (
+      <QuantityControl task={task} goalId={goalId} dateKey={dateKey} isLocked={isLocked} updateTask={updateTask} isOneTime={isOneTime} isCompleted={isCompleted} />
+    );
+  }
+
+  if (type === 'duration') {
+    return (
+      <BinaryControl isCompleted={isCompleted} isLocked={isLocked} onToggle={onToggle} goalId={goalId} taskId={task.id} />
+    );
+  }
+
+  if (type === 'scale') {
+    return (
+      <ScaleControl task={task} goalId={goalId} dateKey={dateKey} isLocked={isLocked} updateTask={updateTask} isOneTime={isOneTime} />
+    );
+  }
+
+  if (type === 'multistate') {
+    return (
+      <MultistateControl task={task} goalId={goalId} dateKey={dateKey} isLocked={isLocked} updateTask={updateTask} isOneTime={isOneTime} />
+    );
+  }
+
+  return (
+    <BinaryControl isCompleted={isCompleted} isLocked={isLocked} onToggle={onToggle} goalId={goalId} taskId={task.id} />
+  );
+}
+
+function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, onDelete, dense, lockReason, goalTasks = [], updateTask }) {
+  const isLocked = !!lockReason;
+  const dateKey = getDateKey(new Date());
+  const isOneTime = task.recurrenceType === 'one-time';
+
+  const subList = isOneTime ? (task.subtasks || []) : (task.dailySubtasks?.[dateKey] || task.subtasks || []);
+  const doneSubtasks = subList.filter(s => s.completed).length;
+  const totalSubtasks = subList.length;
+  const completions = (task.completedDates || []).length;
+  const isGraduated = task.targetCount && completions >= task.targetCount;
+
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleToggleSubtask = (subtaskId) => {
+    if (!updateTask) return;
+    if (isOneTime) {
+      const nextSubtasks = subList.map(s => {
+        if (s.id !== subtaskId) return s;
+        return { ...s, completed: !s.completed };
+      });
+      updateTask(goalId, task.id, { subtasks: nextSubtasks });
+    } else {
+      const dailySubtasks = { ...(task.dailySubtasks || {}) };
+      const nextSubtasks = subList.map(s => {
+        if (s.id !== subtaskId) return s;
+        return { ...s, completed: !s.completed };
+      });
+      dailySubtasks[dateKey] = nextSubtasks;
+      updateTask(goalId, task.id, { dailySubtasks });
+    }
+  };
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--line)' }}>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '12px', alignItems: 'center',
+        padding: dense ? '10px 14px' : '14px 18px',
+        background: isDoneToday ? 'var(--bg-2)' : isLocked ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
+        opacity: isDoneToday ? 0.6 : isLocked ? 0.5 : 1,
+        transition: 'background 0.15s ease, opacity 0.15s ease'
+      }}>
+        <style>{`
+          @keyframes elegantPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+          }
+        `}</style>
+        <InteractiveControl 
+          task={task}
+          goalId={goalId}
+          dateKey={dateKey}
+          isLocked={isLocked}
+          updateTask={updateTask}
+          onToggle={onToggle}
+        />
+        <div style={{ minWidth: 0 }}>
           <div style={{
-            marginTop: '6px',
-            fontSize: dense ? '0.72rem' : '0.82rem',
-            color: 'var(--muted)',
-            lineHeight: 1.5,
-            display: '-webkit-box',
-            WebkitLineClamp: dense ? 2 : 3,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
+            fontSize: dense ? '0.88rem' : '0.95rem', fontWeight: 600,
+            textDecoration: isDoneToday ? 'line-through' : 'none',
+            display: 'flex', alignItems: 'center', gap: '6px',
+            overflow: 'hidden', textOverflow: 'ellipsis'
           }}>
-            {task.description}
+            {task.isPriority && <Star size={14} fill="#f59e0b" color="#f59e0b" style={{ flexShrink: 0 }} />}
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
+            {isLocked && (
+              <span style={{ 
+                fontSize: '0.68rem', background: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', 
+                padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 
+              }}>
+                <Lock size={10} /> Locked
+              </span>
+            )}
+            {isGraduated && (
+              <span style={{ 
+                fontSize: '0.68rem', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981', 
+                padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, fontWeight: 700 
+              }}>
+                🎯 Graduated
+              </span>
+            )}
           </div>
-        )}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-            <RotateCw size={11} /> {task.recurrenceType === 'one-time' ? 'Once' : task.recurrenceType === 'daily' ? 'Daily' : task.recurrenceType === 'weekly' ? 'Weekly' : 'Custom'}
-          </span>
-          {task.timeEstimate && (
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: TIME_COLORS[task.timeEstimate] + '18', color: TIME_COLORS[task.timeEstimate] }}>
-              <Clock size={10} style={{ marginRight: '2px' }} />{task.timeEstimate}
-            </span>
+          
+          {isLocked && lockReason && (
+            <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {lockReason}
+            </div>
           )}
-          {task.energy && (
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: ENERGY_COLORS[task.energy] + '18', color: ENERGY_COLORS[task.energy] }}>
-              <Zap size={10} style={{ marginRight: '2px' }} />{task.energy}
-            </span>
+
+          {task.description && (
+            <div style={{
+              marginTop: '6px',
+              fontSize: dense ? '0.72rem' : '0.82rem',
+              color: 'var(--muted)',
+              lineHeight: 1.5,
+              display: '-webkit-box',
+              WebkitLineClamp: dense ? 2 : 3,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {task.description}
+            </div>
           )}
-          <span style={{
-            fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px',
-            background: isActiveToday ? 'rgba(16,185,129,0.1)' : 'var(--bg-2)',
-            color: isActiveToday ? '#10b981' : 'var(--muted)'
-          }}>{isActiveToday ? 'Today' : 'Later'}</span>
-          {task.deadline && (
-            <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
-              <CalendarIcon size={11} /> {task.deadline}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <RotateCw size={11} /> {task.recurrenceType === 'one-time' ? 'Once' : task.recurrenceType === 'daily' ? 'Daily' : task.recurrenceType === 'weekly' ? 'Weekly' : 'Custom'}
             </span>
-          )}
-          {task.progressMinutes > 0 && (
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>
-              {task.progressMinutes}/{parseTimeEstimate(task.timeEstimate)} min
-            </span>
+            {task.timeEstimate && (
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: TIME_COLORS[task.timeEstimate] + '18', color: TIME_COLORS[task.timeEstimate] }}>
+                <Clock size={10} style={{ marginRight: '2px' }} />{task.timeEstimate}
+              </span>
+            )}
+            {task.energy && (
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: ENERGY_COLORS[task.energy] + '18', color: ENERGY_COLORS[task.energy] }}>
+                <Zap size={10} style={{ marginRight: '2px' }} />{task.energy}
+              </span>
+            )}
+            <span style={{
+              fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px',
+              background: isActiveToday ? 'rgba(16,185,129,0.1)' : 'var(--bg-2)',
+              color: isActiveToday ? '#10b981' : 'var(--muted)'
+            }}>{isActiveToday ? 'Today' : 'Later'}</span>
+
+            {totalSubtasks > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  style={{
+                    fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px',
+                    background: 'rgba(139, 92, 246, 0.1)', color: 'var(--accent)',
+                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px'
+                  }}
+                >
+                  📋 {doneSubtasks}/{totalSubtasks} {isExpanded ? '▲' : '▼'}
+                </button>
+                <div style={{ width: '40px', height: '4px', background: 'var(--line)', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ width: `${(doneSubtasks/totalSubtasks)*100}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s ease' }} />
+                </div>
+              </div>
+            )}
+
+            {task.targetCount && !isGraduated && (
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
+                🎯 {completions}/{task.targetCount} reps
+              </span>
+            )}
+
+            {task.endDate && (
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', background: 'var(--panel)', color: 'var(--muted)' }}>
+                ⏳ Ends {task.endDate}
+              </span>
+            )}
+
+            {task.deadline && (
+              <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}>
+                <CalendarIcon size={11} /> {task.deadline}
+              </span>
+            )}
+            {task.progressMinutes > 0 && (
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--accent)' }}>
+                {task.progressMinutes}/{parseTimeEstimate(task.timeEstimate)} min
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          <button className="ghost-btn" onClick={() => onEdit(task)} title="Edit"
+            style={{ padding: '6px', opacity: 0.5, flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}>
+            <Edit2 size={14} />
+          </button>
+          {onDelete && (
+            <button className="ghost-btn" onClick={() => onDelete(goalId, task.id)} title="Delete task"
+              style={{ padding: '6px', opacity: 0.4, flexShrink: 0, color: '#ef4444' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>
+              <Trash2 size={14} />
+            </button>
           )}
         </div>
       </div>
-      <button className="ghost-btn" onClick={() => onEdit(task)} title="Edit"
-        style={{ padding: '6px', opacity: 0.5, flexShrink: 0 }}
-        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-        onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}>
-        <Edit2 size={14} />
-      </button>
+      {isExpanded && subList.length > 0 && (
+        <div style={{ padding: '10px 22px 14px 44px', background: 'rgba(255,255,255,0.01)', borderTop: '1px solid var(--line)' }}>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {subList.map(sub => (
+              <li key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={sub.completed}
+                  onChange={() => handleToggleSubtask(sub.id)}
+                  disabled={isLocked}
+                  style={{ width: '16px', height: '16px', cursor: isLocked ? 'not-allowed' : 'pointer', accentColor: 'var(--accent)' }}
+                />
+                <span style={{ textDecoration: sub.completed ? 'line-through' : 'none', color: sub.completed ? 'var(--muted)' : 'var(--text)' }}>
+                  {sub.title}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -350,7 +933,8 @@ function GoalsPage({
   getRecurrenceText, prettyDate, today,
   isGoalModalOpen, openGoalModal, closeGoalModal,
   goalName, setGoalName, goalVision, setGoalVision,
-  addGoal, updateTask, addPhaseToGoal, movePhase, completeGoal, theme, aiEnabled
+  addGoal, updateTask, deleteTask, deleteGoal, deletePhase,
+  addPhaseToGoal, movePhase, completeGoal, theme, aiEnabled
 }) {
   /* ── Local UI state ───────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState('tasks');
@@ -364,7 +948,7 @@ function GoalsPage({
   const [creationMode, setCreationMode] = useState(null);
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
-  const [denseMode, setDenseMode] = useState(false);
+  const denseMode = false;
   const [sortBy, setSortBy] = useState('default');
   const [taskForm, setTaskForm] = useState(() => ({
     ...DEFAULT_TASK_FORM,
@@ -380,6 +964,11 @@ function GoalsPage({
     });
   };
 
+  const getLockReason = (t) => {
+    if (!selectedGoal) return null;
+    return getTaskLockStatus(t, selectedGoal, today).reason;
+  };
+
   useEffect(() => {
     if (!isGoalModalOpen) {
       setGoalDeadline('');
@@ -387,7 +976,20 @@ function GoalsPage({
   }, [isGoalModalOpen]);
 
   const updateTaskForm = (payload) => {
-    setTaskForm((prev) => ({ ...prev, ...payload }));
+    setTaskForm((prev) => {
+      const next = { ...prev, ...payload };
+      if (next.recurrenceType === 'one-time') {
+        if ('deadline' in payload) next.oneTimeDate = payload.deadline;
+        else if ('oneTimeDate' in payload) next.deadline = payload.oneTimeDate;
+        next.endDate = null;
+        next.targetCount = null;
+      } else {
+        if (!next.endDate && !next.targetCount) {
+          next.targetCount = 5;
+        }
+      }
+      return next;
+    });
   };
 
   const toggleSpecificDay = (idx) => {
@@ -485,10 +1087,10 @@ function GoalsPage({
             <Target size={48} color="var(--muted)" />
             <div>
               <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text)', marginBottom: '4px' }}>
-                No goals yet
+                Your dreams are waiting to be nurtured
               </div>
-              <p style={{ color: 'var(--muted)', margin: 0, maxWidth: '360px' }}>
-                Create your first goal and let AI build a personalized roadmap, or define it manually.
+              <p style={{ color: 'var(--muted)', margin: 0, maxWidth: '400px', lineHeight: 1.5 }}>
+                Whenever you are ready, let's lay down the first seed. We can design a gentle path together with AI, or you can write it down manually step by step.
               </p>
             </div>
             <button className="primary-btn" onClick={openGoalModal} style={{ marginTop: '8px', padding: '12px 24px' }}>
@@ -535,40 +1137,126 @@ function GoalsPage({
                       <Cpu size={10} /> AI Generated
                     </span>
                   )}
+                  {deleteGoal && (
+                    <button
+                      className="ghost-btn"
+                      onClick={(e) => { e.stopPropagation(); deleteGoal(goal.id, goal.name); }}
+                      title="Delete goal"
+                      style={{ padding: '6px', opacity: 0.4, color: '#ef4444', alignSelf: 'flex-end' }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </button>
               );
             })}
           </div>
         )}
 
-        <button className="fab-goal" onClick={openGoalModal} aria-label="Add goal">+</button>
+        {goals.length > 0 && (
+          <button className="fab-goal" onClick={openGoalModal} aria-label="Add goal">+</button>
+        )}
 
         {isGoalModalOpen && (
           <ModalOverlay onClose={closeGoalModal}>
             {!creationMode ? (
-              <div style={{ display: 'grid', gap: '18px', padding: '8px 0', maxWidth: '420px', margin: '0 auto' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <h3 style={{ margin: '0 0 6px', fontSize: '1.3rem' }}>New Goal</h3>
-                  <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>How would you like to create it?</p>
+              <div style={{ display: 'grid', gap: '22px', padding: '16px 0', maxWidth: '460px', margin: '0 auto' }}>
+                <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: '1.5rem', fontWeight: 800, background: 'linear-gradient(135deg, var(--text) 0%, var(--accent) 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Create New Goal</h3>
+                  <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.92rem', fontWeight: 500 }}>Choose your execution planning strategy</p>
                 </div>
-                <button className="ghost-btn" onClick={() => setCreationMode('manual')}
-                  style={{ padding: '20px', border: '2px solid var(--line)', borderRadius: '14px', textAlign: 'left', display: 'grid', gap: '4px' }}>
-                  <strong style={{ fontSize: '1.05rem' }}>Create Manually</strong>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Define your goal and add tasks yourself.</span>
-                </button>
-                <button className="ghost-btn" onClick={() => setCreationMode('template')}
-                  style={{ padding: '20px', border: '2px solid var(--line)', borderRadius: '14px', textAlign: 'left', display: 'grid', gap: '4px' }}>
-                  <strong style={{ fontSize: '1.05rem' }}>Use a Template</strong>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Pick a proven goal setup and customize it.</span>
-                </button>
-                <button className="primary-btn" onClick={() => setCreationMode('ai')}
-                  style={{ padding: '20px', display: 'grid', gap: '4px', textAlign: 'left', borderRadius: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '1.05rem' }}>Plan with AI</strong>
-                    <Cpu size={24} style={{ opacity: 0.8 }} />
+                
+                {/* Manual Card Selection */}
+                <div 
+                  onClick={() => setCreationMode('manual')}
+                  style={{
+                    padding: '24px',
+                    border: '1px solid var(--line)',
+                    borderRadius: '20px',
+                    background: 'var(--panel)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '16px',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: 'var(--shadow)'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-3px)';
+                    e.currentTarget.style.borderColor = 'var(--muted)';
+                    e.currentTarget.style.boxShadow = '0 12px 28px rgba(0,0,0,0.06)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.borderColor = 'var(--line)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow)';
+                  }}
+                >
+                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(96, 165, 250, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Target size={22} color="var(--blue)" />
                   </div>
-                  <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)' }}>AI asks clarifying questions and builds a detailed roadmap.</span>
-                </button>
+                  <div style={{ display: 'grid', gap: '4px', textAlign: 'left' }}>
+                    <strong style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>Create Manually</strong>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.4 }}>Define your goal vision, milestones, and daily habits step-by-step yourself.</span>
+                  </div>
+                </div>
+
+                {/* AI Planner Card Selection */}
+                <div 
+                  onClick={() => setCreationMode('ai')}
+                  style={{
+                    position: 'relative',
+                    padding: '24px',
+                    border: '1px solid rgba(139, 92, 246, 0.35)',
+                    borderRadius: '20px',
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(236, 72, 153, 0.04) 100%)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '16px',
+                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    boxShadow: '0 8px 30px rgba(139, 92, 246, 0.06)'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.transform = 'translateY(-3px)';
+                    e.currentTarget.style.borderColor = 'var(--accent)';
+                    e.currentTarget.style.boxShadow = '0 12px 32px rgba(139, 92, 246, 0.14)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.35)';
+                    e.currentTarget.style.boxShadow = '0 8px 30px rgba(139, 92, 246, 0.06)';
+                  }}
+                >
+                  {/* Floating badge */}
+                  <span style={{
+                    position: 'absolute',
+                    top: '-12px',
+                    right: '18px',
+                    background: 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+                    color: '#fff',
+                    fontSize: '0.68rem',
+                    fontWeight: 800,
+                    padding: '4px 10px',
+                    borderRadius: '99px',
+                    letterSpacing: '0.04em',
+                    boxShadow: '0 4px 10px rgba(124, 58, 237, 0.25)'
+                  }}>
+                    RECOMMENDED
+                  </span>
+
+                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(236, 72, 153, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Cpu size={22} color="var(--pink)" />
+                  </div>
+                  <div style={{ display: 'grid', gap: '4px', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <strong style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>Plan with AI</strong>
+                    </div>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.4 }}>Let Gola ask clarifying questions, analyze blockers, and compile a fully tailored roadmap for you.</span>
+                  </div>
+                </div>
               </div>
             ) : creationMode === 'manual' ? (
               <ManualGoalWizard
@@ -578,58 +1266,6 @@ function GoalsPage({
                 onBack={() => setCreationMode(null)}
                 onSubmit={addGoal}
               />
-            ) : creationMode === 'template' ? (
-              <div style={{ display: 'grid', gap: '16px', maxWidth: '520px', margin: '0 auto' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <h3 style={{ margin: '0 0 6px', fontSize: '1.3rem' }}>Choose a Template</h3>
-                  <p style={{ color: 'var(--muted)', margin: 0, fontSize: '0.9rem' }}>Start with a proven goal layout.</p>
-                </div>
-                <div style={{ display: 'grid', gap: '10px' }}>
-                  {GOAL_TEMPLATES.map((template) => (
-                    <button
-                      key={template.name}
-                      type="button"
-                      className="ghost-btn"
-                      style={{ padding: '16px', border: '2px solid var(--line)', borderRadius: '14px', textAlign: 'left', display: 'grid', gap: '6px' }}
-                      onClick={() => {
-                        const tasksWithIds = template.tasks.map((task, index) => ({
-                          id: Date.now() + index,
-                          title: task.title,
-                          description: task.description || '',
-                          recurrenceType: task.recurrenceType || 'one-time',
-                          oneTimeDate: task.oneTimeDate || getDateKey(new Date()),
-                          weeklyDay: Number.isInteger(task.weeklyDay) ? task.weeklyDay : 1,
-                          specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
-                          deadline: task.deadline || '',
-                          timeEstimate: task.timeEstimate || '30m',
-                          energy: task.energy || 'Medium',
-                          progressMinutes: 0,
-                          order: index,
-                          completed: false,
-                          completedDates: []
-                        }));
-
-                        setGoalName(template.name);
-                        setGoalVision(template.vision || '');
-                        addGoal({
-                          name: template.name,
-                          vision: template.vision || '',
-                          tasks: tasksWithIds,
-                          roadmapData: { source: 'template', templateName: template.name }
-                        });
-                        setCreationMode(null);
-                      }}
-                    >
-                      <strong style={{ fontSize: '1rem' }}>{template.name}</strong>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>{template.vision}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{template.tasks.length} starter tasks</span>
-                    </button>
-                  ))}
-                </div>
-                <button type="button" className="ghost-btn" onClick={() => setCreationMode(null)}>
-                  Back
-                </button>
-              </div>
             ) : (
               <AiGoalWizard
                 goalName={goalName} setGoalName={setGoalName}
@@ -853,11 +1489,6 @@ function GoalsPage({
               <option value="alpha">A–Z</option>
             </select>
 
-            {/* Dense toggle */}
-            <button onClick={() => setDenseMode(d => !d)} className="ghost-btn"
-              style={{ padding: '7px 10px', fontSize: '0.78rem' }}>
-              {denseMode ? 'Comfort' : 'Compact'}
-            </button>
 
             {/* Add Phase */}
             <button className="primary-btn" onClick={() => setIsPhaseModalOpen(true)}
@@ -948,7 +1579,11 @@ function GoalsPage({
                             isDoneToday={false}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
-                            dense={denseMode} />
+                            onDelete={deleteTask}
+                            lockReason={getLockReason(task)}
+                            goalTasks={selectedGoal.tasks}
+                            dense={denseMode}
+                            updateTask={updateTask} />
                         ))}
                       </div>
                     )}
@@ -970,7 +1605,11 @@ function GoalsPage({
                             isDoneToday={true}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
-                            dense={denseMode} />
+                            onDelete={deleteTask}
+                            lockReason={getLockReason(task)}
+                            goalTasks={selectedGoal.tasks}
+                            dense={denseMode}
+                            updateTask={updateTask} />
                         ))}
                       </div>
                     )}
@@ -997,7 +1636,11 @@ function GoalsPage({
                             isDoneToday={false}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
-                            dense={denseMode} />
+                            onDelete={deleteTask}
+                            lockReason={getLockReason(task)}
+                            goalTasks={selectedGoal.tasks}
+                            dense={denseMode}
+                            updateTask={updateTask} />
                         ))}
                       </div>
                     )}
@@ -1012,7 +1655,11 @@ function GoalsPage({
                             isDoneToday={true}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
-                            dense={denseMode} />
+                            onDelete={deleteTask}
+                            lockReason={getLockReason(task)}
+                            goalTasks={selectedGoal.tasks}
+                            dense={denseMode}
+                            updateTask={updateTask} />
                         ))}
                       </div>
                     )}
@@ -1039,7 +1686,11 @@ function GoalsPage({
                       isDoneToday={false}
                       onToggle={toggleTaskDoneForToday}
                       onEdit={setEditingTask}
-                      dense={denseMode} />
+                      onDelete={deleteTask}
+                      lockReason={getLockReason(task)}
+                      goalTasks={selectedGoal.tasks}
+                      dense={denseMode}
+                      updateTask={updateTask} />
                   ))}
                 </div>
               )}
@@ -1061,7 +1712,11 @@ function GoalsPage({
                       isDoneToday={true}
                       onToggle={toggleTaskDoneForToday}
                       onEdit={setEditingTask}
-                      dense={denseMode} />
+                      onDelete={deleteTask}
+                      lockReason={getLockReason(task)}
+                      goalTasks={selectedGoal.tasks}
+                      dense={denseMode}
+                      updateTask={updateTask} />
                   ))}
                 </div>
               )}
@@ -1082,6 +1737,7 @@ function GoalsPage({
             weekDays={weekDays}
             onCancel={() => setIsTaskModalOpen(false)}
             phases={selectedGoal?.roadmap?.phases || []}
+            goalTasks={selectedGoal?.tasks || []}
             isEdit={false}
           />
         </ModalOverlay>
@@ -1092,7 +1748,14 @@ function GoalsPage({
           <GoalTaskForm
             title="Edit Task"
             form={{ ...editingTask, timeEstimate: editingTask.timeEstimate || '30m', energy: editingTask.energy || 'Medium' }}
-            onChange={payload => setEditingTask(prev => ({ ...prev, ...payload }))}
+            onChange={payload => setEditingTask(prev => {
+              const next = { ...prev, ...payload };
+              if (next.recurrenceType === 'one-time') {
+                if ('deadline' in payload) next.oneTimeDate = payload.deadline;
+                else if ('oneTimeDate' in payload) next.deadline = payload.oneTimeDate;
+              }
+              return next;
+            })}
             onSubmit={e => { e.preventDefault(); updateTask(selectedGoal.id, editingTask.id, editingTask); setEditingTask(null); }}
             toggleSpecificDayHandler={idx => {
               const next = editingTask.specificDays?.includes(idx)
@@ -1103,6 +1766,7 @@ function GoalsPage({
             weekDays={weekDays}
             onCancel={() => setEditingTask(null)}
             phases={selectedGoal?.roadmap?.phases || []}
+            goalTasks={selectedGoal?.tasks || []}
             isEdit
           />
         </ModalOverlay>

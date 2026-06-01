@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import AuthLayout from '../components/auth/AuthLayout';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase/config';
 
 function LoginPage({ onLogin, theme = 'light' }) {
@@ -16,6 +16,10 @@ function LoginPage({ onLogin, theme = 'light' }) {
   const [focusedField, setFocusedField] = useState('');
   const [isLoginHovered, setIsLoginHovered] = useState(false);
   const [isLoginPressed, setIsLoginPressed] = useState(false);
+
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
 
   const inputStyle = (field) => ({
     minHeight: '46px',
@@ -64,6 +68,102 @@ function LoginPage({ onLogin, theme = 'light' }) {
     }
   };
 
+  const handleResetPassword = async (event) => {
+    event.preventDefault();
+
+    if (!resetEmail.trim()) {
+      setError('Please provide your email address.');
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, resetEmail.trim());
+      setResetSuccess('Recovery instructions sent to your inbox.');
+      setError('');
+    } catch (err) {
+      setError('Failed to send reset email: ' + err.message);
+      setResetSuccess('');
+    }
+  };
+
+  if (isResetting) {
+    return (
+      <AuthLayout
+        title="Reset Password"
+        subtitle="We will send a recovery link to your email."
+        logoSize={88}
+        logoFramed={false}
+        theme={theme}
+        footer={
+          <p style={{ margin: 0, textAlign: 'center', fontSize: '0.9rem', color: mutedColor }}>
+            Remembered your password?{' '}
+            <button
+              type="button"
+              onClick={() => { setIsResetting(false); setError(''); setResetSuccess(''); }}
+              style={{
+                color: '#6d28d9',
+                fontWeight: 700,
+                textDecoration: 'none',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                padding: 0
+              }}
+            >
+              Sign In
+            </button>
+          </p>
+        }
+      >
+        <form onSubmit={handleResetPassword} style={{ display: 'grid', gap: '12px', width: '100%' }}>
+          <label htmlFor="reset-email" style={{ display: 'grid', gap: '6px', color: labelColor, fontSize: '0.88rem', fontWeight: 600 }}>
+            Email
+            <input
+              id="reset-email"
+              type="email"
+              value={resetEmail}
+              onChange={(event) => {
+                setResetEmail(event.target.value);
+                if (error) setError('');
+              }}
+              onFocus={() => setFocusedField('reset-email')}
+              onBlur={() => setFocusedField('')}
+              placeholder="you@example.com"
+              required
+              style={inputStyle('reset-email')}
+            />
+          </label>
+
+          {error && (
+            <p role="alert" style={{ margin: 0, fontSize: '0.84rem', color: '#be123c', fontWeight: 600 }}>
+              {error}
+            </p>
+          )}
+
+          {resetSuccess && (
+            <p role="alert" style={{ margin: 0, fontSize: '0.84rem', color: '#10b981', fontWeight: 600 }}>
+              {resetSuccess}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            onMouseEnter={() => setIsLoginHovered(true)}
+            onMouseLeave={() => {
+              setIsLoginHovered(false);
+              setIsLoginPressed(false);
+            }}
+            onMouseDown={() => setIsLoginPressed(true)}
+            onMouseUp={() => setIsLoginPressed(false)}
+            style={loginButtonStyle}
+          >
+            Send Reset Link
+          </button>
+        </form>
+      </AuthLayout>
+    );
+  }
+
   return (
     <AuthLayout
       title="Welcome Back"
@@ -105,7 +205,24 @@ function LoginPage({ onLogin, theme = 'light' }) {
         </label>
 
         <label htmlFor="login-password" style={{ display: 'grid', gap: '6px', color: labelColor, fontSize: '0.88rem', fontWeight: 600 }}>
-          Password
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Password</span>
+            <button
+              type="button"
+              onClick={() => { setIsResetting(true); setError(''); }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#6d28d9',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: 0
+              }}
+            >
+              Forgot Password?
+            </button>
+          </div>
           <input
             id="login-password"
             type="password"

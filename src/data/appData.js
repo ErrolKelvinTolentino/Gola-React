@@ -14,7 +14,11 @@ export const DEFAULT_TASK_FORM = {
   deadline: '',
   timeEstimate: '30m',
   energy: 'Medium',
-  phaseId: ''
+  phaseId: '',
+  completionType: 'binary',
+  currentValue: 0,
+  targetValue: null,
+  subtasks: []
 };
 
 export const DEFAULT_SETTINGS = {

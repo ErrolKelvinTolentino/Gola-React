@@ -27,6 +27,8 @@ service cloud.firestore {
         'aiEnabled',
         'theme',
         'settings',
+        'dailyScores',
+        'dailyReflections',
         'createdAt',
         'updatedAt'
       ])
@@ -38,6 +40,8 @@ service cloud.firestore {
       && request.resource.data.theme in ['light', 'dark']
       && request.resource.data.settings is map
       && request.resource.data.updatedAt is string
+      && (!('dailyScores' in request.resource.data) || request.resource.data.dailyScores is list)
+      && (!('dailyReflections' in request.resource.data) || request.resource.data.dailyReflections is list)
       && (!('createdAt' in request.resource.data) || request.resource.data.createdAt is string);
     }
 

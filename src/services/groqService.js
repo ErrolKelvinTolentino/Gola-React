@@ -4,7 +4,7 @@
    Every function has try/catch + returns structured JSON.
    Callers should always wrap in try/catch and fall back gracefully.
 ───────────────────────────────────────────────────────────── */
-
+import { isTaskDoneForDate } from '../utils/dateUtils';
 const GROQ_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
 if (process.env.NODE_ENV !== 'production') {
   // eslint-disable-next-line no-console
@@ -12,7 +12,9 @@ if (process.env.NODE_ENV !== 'production') {
 }
 const GROQ_MODELS = [
   'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b'
+  'openai/gpt-oss-20b',
+  'openai/gpt-oss-safeguard-20b',
+  'qwen/qwen3-32b'
 ];
 const GROQ_ENDPOINT_BASE = 'https://api.groq.com/openai/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 20000;
@@ -325,25 +327,34 @@ CRITICAL RULES — YOU MUST FOLLOW ALL OF THEM:
    - If you have 5 weekly tasks, put 1-2 on Monday, 1 on Wednesday, 1 on Thursday, 1 on Friday
    - This prevents overwhelming the user
 
-5. TASKS MUST BE DOMAIN-SPECIFIC AND CONCRETE:
+5. SELECT APPROPRIATE TASK COMPLETION TYPES:
+   - Evaluate each task to determine the most interactive measurement pattern:
+     - "binary" = Standard checkbox task (e.g. read an article, install a tool).
+     - "quantity" = Count-based task (e.g. do 15 reps, write 500 words).
+     - "subtasks" = Milestone task broken into dynamic steps (e.g. set up server, write API endpoints, configure database).
+     - "scale" = Qualitative tracking rating (e.g. rate sleep quality, track energy level).
+     - "multistate" = Status cycling badge (Todo -> Progress -> Blocked -> Done).
+   - If task is "quantity", specify a positive integer "targetValue" (e.g. 15 for 15 reps).
+   - If task is "subtasks", specify "subtasks" as an array of string items representing the nested checklists.
+
+6. TASKS MUST BE DOMAIN-SPECIFIC AND CONCRETE:
    - GOOD: "Memorize 50 most common Spanish verbs with flashcards"
    - BAD: "Practice Spanish" or "Learn vocabulary"
 
-6. EACH TASK MUST INCLUDE A DETAILED DESCRIPTION:
+7. EACH TASK MUST INCLUDE A DETAILED DESCRIPTION:
    - Use the task 'description' field to explain the next steps, provide a mini-tutorial, or suggest learning resources.
    - Avoid generic wording like "Research X" without concrete guidance.
-   - Good examples: "Read this article ... then summarize key concepts" or "Watch a tutorial on ... and practice with ...".
 
-7. THE FIRST TWO PHASES must contain one-time setup/milestone tasks.
+8. THE FIRST TWO PHASES must contain one-time setup/milestone tasks.
    The middle phases should have a mix.
    The final phase should have assessment/delivery tasks.
 
-7. ENERGY LEVELS:
+9. ENERGY LEVELS:
    - "High" = Learning new concepts, intense practice, assessments
    - "Medium" = Regular practice, review
    - "Low" = Maintenance, light review, planning
 
-8. TIME ESTIMATES:
+10. TIME ESTIMATES:
    - "15m" = Quick tasks, review, light practice
    - "30m" = Standard practice sessions
    - "1h" = Deep learning, comprehensive review
@@ -378,7 +389,10 @@ Return JSON with this exact schema:
           "energy": "Low|Medium|High",
           "deadline": "YYYY-MM-DD or empty string",
           "oneTimeDate": "YYYY-MM-DD or empty string",
-          "weeklyDay": 0
+          "weeklyDay": 0,
+          "completionType": "binary|quantity|subtasks|scale|multistate",
+          "targetValue": number,
+          "subtasks": ["string", "string"]
         }
       ]
     }
@@ -437,27 +451,30 @@ Generate a personalized, domain-specific roadmap for this goal NOW.`;
  * Generate a personalized morning briefing based on today's tasks and progress.
  */
 export async function generateMorningBriefing(todayTasks, goals, completionRate, streak) {
-  const taskSummary = todayTasks.slice(0, 10).map(t => 
-    `- "${t.task.title}" (${t.goalName}, ${t.task.energy || 'Medium'} energy, ${t.task.timeEstimate || '30m'})`
-  ).join('\n');
+  const taskSummary = todayTasks.slice(0, 10).map(t => {
+    const isCompleted = isTaskDoneForDate(t.task, new Date());
+    const status = isCompleted ? 'COMPLETED' : 'PENDING';
+    return `- "${t.task.title}" [Status: ${status}] (${t.goalName}, ${t.task.energy || 'Medium'} energy, ${t.task.timeEstimate || '30m'})`;
+  }).join('\n');
 
   const goalSummary = goals.slice(0, 5).map(g => 
     `- "${g.name}" (${g.tasks.length} tasks)`
   ).join('\n');
 
-  const systemInstruction = `You are Gola, a warm and motivating AI productivity coach. Generate a personalized morning briefing.
+  const systemInstruction = `You are Gola, a warm and motivating AI productivity coach. Generate a personalized daily briefing.
 
 RULES:
-- Write a 3-5 sentence briefing that feels personal and encouraging
-- Acknowledge today's task load realistically
-- If the user has a streak going, celebrate it subtly
-- Suggest which task to tackle first based on energy levels (start with easy tasks in morning or high-energy depending on context)
-- Set an appropriate mood: "motivated" for busy days, "focused" for moderate days, "gentle" for light days, "celebratory" for high streaks or high completion
-- Keep the greeting contextual (time of day, workload)
+- Write a 3-5 sentence briefing that feels personal, encouraging, and highly contextual.
+- Acknowledge today's task load realistically based on task statuses.
+- If the user has a streak going, celebrate it subtly.
+- If there are pending tasks, suggest which task to tackle first based on energy levels.
+- If ALL tasks are already COMPLETED (or if completion rate is 100%), congratulate the user warmly on completing everything scheduled for today, celebrate their productivity, and encourage them to rest, review their goals, or plan for tomorrow. In this case, "suggestedFirstTask" MUST be null and the mood should be "celebratory".
+- Set an appropriate mood: "motivated" for busy days, "focused" for moderate days, "gentle" for light days, "celebratory" for high streaks or high completion (100% completion rate).
+- Keep the greeting contextual (time of day, workload, or completion state).
 
 Return JSON with this exact schema:
 {
-  "greeting": "Good morning",
+  "greeting": "Good morning / Great job today!",
   "briefing": "3-5 sentence briefing text",
   "suggestedFirstTask": "task title or null",
   "mood": "motivated|focused|gentle|celebratory"
@@ -473,7 +490,7 @@ Stats:
 - Completion rate: ${completionRate}%
 - Current streak: ${streak} days
 
-Generate a morning briefing for this user.`;
+Generate a briefing for this user.`;
 
   const response = await callGroq(prompt, systemInstruction);
 
@@ -563,26 +580,45 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
   const validRecurrenceTypes = ['one-time', 'daily', 'weekly', 'specific-days'];
   const validTimeEstimates = ['15m', '30m', '1h', '2h+'];
   const validEnergies = ['Low', 'Medium', 'High'];
+  const validCompletionTypes = ['binary', 'quantity', 'subtasks', 'scale', 'multistate'];
 
   const phases = (aiResponse.phases || []).map((phase, phaseIdx) => {
     const phaseId = `p${phaseIdx + 1}`;
-    const tasks = (phase.tasks || []).map((task, taskIdx) => ({
-      id: uid(),
-      title: task.title || 'Untitled task',
-      description: safeString(task.description, ''),
-      recurrenceType: validRecurrenceTypes.includes(task.recurrenceType) ? task.recurrenceType : 'one-time',
-      oneTimeDate: task.oneTimeDate || deadline || '',
-      deadline: task.deadline || deadline || '',
-      weeklyDay: typeof task.weeklyDay === 'number' ? task.weeklyDay : 1,
-      specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
-      timeEstimate: validTimeEstimates.includes(task.timeEstimate) ? task.timeEstimate : '30m',
-      energy: validEnergies.includes(task.energy) ? task.energy : 'Medium',
-      progressMinutes: 0,
-      order: taskIdx,
-      phaseId,
-      completed: false,
-      completedDates: []
-    }));
+    const tasks = (phase.tasks || []).map((task, taskIdx) => {
+      const cType = validCompletionTypes.includes(task.completionType) ? task.completionType : 'binary';
+      const subtaskArray = cType === 'subtasks' && Array.isArray(task.subtasks)
+        ? task.subtasks.map((st, stIdx) => ({
+            id: `sub-${uid()}-${stIdx}`,
+            title: typeof st === 'string' ? st.trim() : (st?.title || 'Subtask').trim(),
+            completed: false
+          }))
+        : [];
+
+      return {
+        id: uid(),
+        title: task.title || 'Untitled task',
+        description: safeString(task.description, ''),
+        recurrenceType: validRecurrenceTypes.includes(task.recurrenceType) ? task.recurrenceType : 'one-time',
+        oneTimeDate: task.oneTimeDate || deadline || '',
+        deadline: task.deadline || deadline || '',
+        weeklyDay: typeof task.weeklyDay === 'number' ? task.weeklyDay : 1,
+        specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
+        timeEstimate: validTimeEstimates.includes(task.timeEstimate) ? task.timeEstimate : '30m',
+        energy: validEnergies.includes(task.energy) ? task.energy : 'Medium',
+        completionType: cType,
+        targetValue: cType === 'quantity' 
+          ? (Number(task.targetValue) || 10)
+          : null,
+        currentValue: 0,
+        subtasks: subtaskArray,
+        dailyProgress: {},
+        progressMinutes: 0,
+        order: taskIdx,
+        phaseId,
+        completed: false,
+        completedDates: []
+      };
+    });
 
     return {
       id: phaseId,

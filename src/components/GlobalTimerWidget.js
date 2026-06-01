@@ -33,7 +33,24 @@ function GlobalTimerWidget({ activePage, setActivePage }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: mode === 'work' ? 'var(--accent)' : 'var(--good)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: '1.1rem' }}>
         <Timer size={18} /> {timeStr}
       </div>
-      <button onClick={(e) => { e.stopPropagation(); toggleTimer(); }} style={{ background: 'transparent', border: 'none', color: 'var(--text)', cursor: 'pointer', display: 'flex' }}>
+      <button 
+        onClick={(e) => { e.stopPropagation(); toggleTimer(); }} 
+        style={{ 
+          background: 'transparent', 
+          border: 'none', 
+          padding: 0,
+          margin: 0,
+          minWidth: '0', 
+          minHeight: '0', 
+          width: '24px', 
+          height: '24px', 
+          color: 'var(--text)', 
+          cursor: 'pointer', 
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
         {isActive ? <Pause size={18} /> : <Play size={18} />}
       </button>
     </div>

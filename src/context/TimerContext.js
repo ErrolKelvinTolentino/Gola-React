@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
 
 const TimerContext = createContext();
 
@@ -14,6 +14,10 @@ export function TimerProvider({ children }) {
   const [sessionCompleted, setSessionCompleted] = useState(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoStartNext, setAutoStartNext] = useState(false);
+  const [completedWorkSessions, setCompletedWorkSessions] = useState(0);
+
+  const timerStartRef = useRef(null);
+  const initialTimeLeftRef = useRef(null);
 
   const playAlarm = useCallback(() => {
     if (!soundEnabled) return;
@@ -50,8 +54,16 @@ export function TimerProvider({ children }) {
   }, []);
 
   const completeSession = useCallback((completedMode, completedDur) => {
-    const nextMode = completedMode === 'work' ? 'shortBreak' : 'work';
-    const nextDuration = nextMode === 'work' ? workDur : shortDur;
+    let nextMode = 'work';
+    let nextCount = completedWorkSessions;
+
+    if (completedMode === 'work') {
+      nextCount = completedWorkSessions + 1;
+      setCompletedWorkSessions(nextCount);
+      nextMode = nextCount % 4 === 0 ? 'longBreak' : 'shortBreak';
+    }
+
+    const nextDuration = nextMode === 'work' ? workDur : nextMode === 'shortBreak' ? shortDur : longDur;
 
     setMode(nextMode);
     setTimeLeft(Math.max(1, nextDuration) * 60);
@@ -65,7 +77,7 @@ export function TimerProvider({ children }) {
     if (autoStartNext) {
       setIsActive(true);
     }
-  }, [autoStartNext, notifySessionComplete, shortDur, workDur]);
+  }, [autoStartNext, notifySessionComplete, shortDur, workDur, longDur, completedWorkSessions]);
 
   const skipTimer = () => {
     setIsActive(false);
@@ -76,10 +88,32 @@ export function TimerProvider({ children }) {
   };
 
   useEffect(() => {
+    if (isActive) {
+      timerStartRef.current = Date.now();
+      initialTimeLeftRef.current = timeLeft;
+    } else {
+      timerStartRef.current = null;
+      initialTimeLeftRef.current = null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
+
+  useEffect(() => {
     let interval = null;
     if (isActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft(t => (t <= 1 ? 0 : t - 1));
+        if (timerStartRef.current !== null && initialTimeLeftRef.current !== null) {
+          const elapsedSeconds = Math.floor((Date.now() - timerStartRef.current) / 1000);
+          const nextTimeLeft = Math.max(0, initialTimeLeftRef.current - elapsedSeconds);
+          setTimeLeft(nextTimeLeft);
+
+          if (nextTimeLeft === 0) {
+            setIsActive(false);
+            playAlarm();
+            const completedDur = mode === 'work' ? workDur : mode === 'shortBreak' ? shortDur : longDur;
+            completeSession(mode, completedDur);
+          }
+        }
       }, 1000);
     } else if (isActive && timeLeft === 0) {
       setIsActive(false);
@@ -93,13 +127,16 @@ export function TimerProvider({ children }) {
 
   const toggleTimer = () => setIsActive(!isActive);
 
-  const setCustomMode = (newMode) => {
+  const setCustomMode = useCallback((newMode, workDurOverride, shortDurOverride, longDurOverride) => {
     setIsActive(false);
     setMode(newMode);
-    if (newMode === 'work') setTimeLeft(Math.max(1, workDur) * 60);
-    if (newMode === 'shortBreak') setTimeLeft(Math.max(1, shortDur) * 60);
-    if (newMode === 'longBreak') setTimeLeft(Math.max(1, longDur) * 60);
-  };
+    const w = workDurOverride !== undefined ? workDurOverride : workDur;
+    const s = shortDurOverride !== undefined ? shortDurOverride : shortDur;
+    const l = longDurOverride !== undefined ? longDurOverride : longDur;
+    if (newMode === 'work') setTimeLeft(Math.max(1, w) * 60);
+    if (newMode === 'shortBreak') setTimeLeft(Math.max(1, s) * 60);
+    if (newMode === 'longBreak') setTimeLeft(Math.max(1, l) * 60);
+  }, [workDur, shortDur, longDur]);
 
   const clearSessionCompleted = () => setSessionCompleted(null);
 

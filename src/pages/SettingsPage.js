@@ -1,9 +1,9 @@
 import React from 'react';
-import { Download, User } from 'lucide-react';
+import { Download, Upload, User } from 'lucide-react';
 import { isGroqAvailable } from '../services/groqService';
 import { useTimer } from '../context/TimerContext';
 
-function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, onOpenProfile, settings = {}, onToggleSetting }) {
+function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, importData, onOpenProfile, settings = {}, onToggleSetting }) {
   const groqAvailable = isGroqAvailable();
   const { soundEnabled, setSoundEnabled, autoStartNext, setAutoStartNext } = useTimer();
 
@@ -47,51 +47,6 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
           </button>
         </div>
 
-        {/* AI Features Toggle */}
-        <div className="setting-row" style={{ padding: '24px 32px', borderBottom: '1px solid var(--line)' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <strong style={{ fontSize: '1.1rem' }}>AI Features</strong>
-              {groqAvailable ? (
-                <span style={{
-                  fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
-                  letterSpacing: '0.06em', padding: '3px 8px', borderRadius: '6px',
-                  background: 'rgba(16, 185, 129, 0.1)', color: '#10b981',
-                  border: '1px solid rgba(16, 185, 129, 0.2)'
-                }}>
-                  Connected
-                </span>
-              ) : (
-                <span style={{
-                  fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
-                  letterSpacing: '0.06em', padding: '3px 8px', borderRadius: '6px',
-                  background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b',
-                  border: '1px solid rgba(245, 158, 11, 0.2)'
-                }}>
-                  No API Key
-                </span>
-              )}
-            </div>
-            <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
-              Enable Groq-powered morning briefings, domain-specific goal planning, and weekly review insights.
-              {!groqAvailable && (
-                <span style={{ display: 'block', marginTop: '6px', fontSize: '0.82rem', color: '#f59e0b' }}>
-                  Set <code style={{ background: 'var(--bg-2)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.78rem' }}>REACT_APP_GROQ_API_KEY</code> in your .env file to enable AI features.
-                </span>
-              )}
-            </p>
-          </div>
-          <button
-            type="button"
-            className={aiEnabled ? 'toggle on' : 'toggle'}
-            onClick={() => setAiEnabled(!aiEnabled)}
-            aria-pressed={aiEnabled}
-            disabled={!groqAvailable}
-            style={{ opacity: groqAvailable ? 1 : 0.5 }}
-          >
-            <span />
-          </button>
-        </div>
 
         {/* Data Export */}
         <div className="setting-row" style={{ padding: '24px 32px', borderBottom: '1px solid var(--line)' }}>
@@ -113,6 +68,45 @@ function SettingsPage({ theme, setTheme, aiEnabled, setAiEnabled, exportData, on
             <Download size={16} />
             Export JSON
           </button>
+        </div>
+
+        {/* Data Import */}
+        <div className="setting-row" style={{ padding: '24px 32px', borderBottom: '1px solid var(--line)' }}>
+          <div>
+            <strong style={{ fontSize: '1.1rem', display: 'block', marginBottom: '4px' }}>Import Data</strong>
+            <p style={{ margin: 0, color: 'var(--muted)', fontSize: '0.9rem' }}>
+              Restore your goals, tasks, focus sessions, and streak data from a previously exported JSON backup.
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <label
+              className="ghost-btn"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 18px',
+                fontSize: '0.88rem',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Upload size={16} />
+              Import JSON
+              <input
+                type="file"
+                accept=".json"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file && importData) {
+                    importData(file);
+                    alert('Data imported successfully!');
+                  }
+                }}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
         </div>
 
         {/* Timer Settings */}

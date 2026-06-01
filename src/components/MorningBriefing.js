@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Sparkles, Zap, Coffee, Target, Star, Loader2, Play } from 'lucide-react';
 import { generateMorningBriefing, isGroqAvailable } from '../services/groqService';
+import { isTaskDoneForDate } from '../utils/dateUtils';
 
 const MOOD_ICONS = {
   motivated: Zap,
@@ -16,11 +17,7 @@ const MOOD_COLORS = {
   celebratory: '#10b981'
 };
 
-function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled, onStartTask }) {
-  const [briefing, setBriefing] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [isAiGenerated, setIsAiGenerated] = useState(false);
-
+function MorningBriefing({ user, todayTasks = [], goals = [], completionRate = 0, streak = 0, aiEnabled = true, onStartTask }) {
   const taskSignature = useMemo(
     () => JSON.stringify((todayTasks || []).map((item) => ({
       id: item?.task?.id,
@@ -42,19 +39,94 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
     [goals]
   );
 
+  const cacheKey = `gola.${user?.uid || 'guest'}.morningBriefingCache`;
+
+  const getCachedData = () => {
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed.date === new Date().toDateString() &&
+          parsed.taskSignature === taskSignature &&
+          parsed.goalSignature === goalSignature &&
+          parsed.completionRate === completionRate &&
+          parsed.streak === streak &&
+          parsed.aiEnabled === aiEnabled
+        ) {
+          return parsed;
+        }
+      }
+    } catch (_) {}
+    return null;
+  };
+
+  const [briefing, setBriefing] = useState(() => {
+    const cached = getCachedData();
+    if (cached) return cached.briefing;
+    
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.date === new Date().toDateString()) return parsed.briefing;
+      }
+    } catch (_) {}
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = getCachedData();
+    if (cached) return false;
+    
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.date === new Date().toDateString()) return false;
+      }
+    } catch (_) {}
+    return true;
+  });
+  const [isAiGenerated, setIsAiGenerated] = useState(() => {
+    const cached = getCachedData();
+    return cached ? cached.isAiGenerated : false;
+  });
+
   useEffect(() => {
     let cancelled = false;
+
+    const cachedData = getCachedData();
+    if (cachedData) {
+      if (!cancelled) {
+        setBriefing(cachedData.briefing);
+        setIsAiGenerated(cachedData.isAiGenerated);
+        setLoading(false);
+      }
+      return;
+    }
 
     const fetchBriefing = async () => {
       // Try AI first if enabled
       if (aiEnabled && isGroqAvailable() && (todayTasks.length > 0 || goals.length > 0)) {
-        setLoading(true);
+        if (!briefing) setLoading(true);
         try {
           const aiResult = await generateMorningBriefing(todayTasks, goals, completionRate, streak);
           if (!cancelled) {
             setBriefing(aiResult);
             setIsAiGenerated(true);
             setLoading(false);
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify({
+                date: new Date().toDateString(),
+                taskSignature,
+                goalSignature,
+                completionRate,
+                streak,
+                aiEnabled,
+                briefing: aiResult,
+                isAiGenerated: true
+              }));
+            } catch (_) {}
           }
           return;
         } catch (error) {
@@ -74,6 +146,9 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
         if (todayTasks.length === 0) {
           mood = 'gentle';
           briefingText = "No tasks scheduled for today. This is a great opportunity to plan ahead, review your goals, or simply recharge. You've earned it.";
+        } else if (completionRate === 100) {
+          mood = 'celebratory';
+          briefingText = `Incredible job! You've completed all ${todayTasks.length} tasks scheduled for today. Take some time to relax, celebrate your progress, and recharge for tomorrow!`;
         } else if (streak >= 7) {
           mood = 'celebratory';
           briefingText = `You're on a ${streak}-day streak — incredible consistency! You have ${todayTasks.length} task${todayTasks.length > 1 ? 's' : ''} today. Keep the momentum alive by starting with something manageable.`;
@@ -86,21 +161,35 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
         }
 
         // Suggest first task: prefer Low energy for morning, or shortest time
-        const pending = todayTasks.filter(t => !t.task?.completed);
+        const pending = todayTasks.filter(t => !isTaskDoneForDate(t.task, new Date()));
         if (pending.length > 0) {
           const lowEnergy = pending.find(t => t.task.energy === 'Low');
           const quick = pending.find(t => t.task.timeEstimate === '15m');
           suggestedFirst = (lowEnergy || quick || pending[0])?.task?.title || null;
         }
 
-        setBriefing({
+        const fallbackResult = {
           greeting,
           briefing: briefingText,
           suggestedFirstTask: suggestedFirst,
           mood
-        });
+        };
+
+        setBriefing(fallbackResult);
         setIsAiGenerated(false);
         setLoading(false);
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({
+            date: new Date().toDateString(),
+            taskSignature,
+            goalSignature,
+            completionRate,
+            streak,
+            aiEnabled,
+            briefing: fallbackResult,
+            isAiGenerated: false
+          }));
+        } catch (_) {}
       }
     };
 
@@ -108,7 +197,7 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
     return () => { cancelled = true; };
   // Signature-based dependencies prevent redundant AI calls on parent rerenders.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskSignature, goalSignature, completionRate, streak, aiEnabled]);
+  }, [taskSignature, goalSignature, completionRate, streak, aiEnabled, cacheKey]);
 
   if (loading) {
     return (
@@ -120,9 +209,7 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
         display: 'flex',
         alignItems: 'center',
         gap: '16px',
-        marginBottom: '20px',
-        animation: 'floatUpFade 0.4s ease forwards',
-        opacity: 0
+        marginBottom: '20px'
       }}>
         <div style={{
           width: '44px',
@@ -183,8 +270,6 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
       display: 'grid',
       gap: '16px',
       marginBottom: '20px',
-      animation: 'floatUpFade 0.5s ease forwards',
-      opacity: 0,
       position: 'relative'
     }}>
       {/* Header */}
@@ -238,7 +323,7 @@ function MorningBriefing({ todayTasks, goals, completionRate, streak, aiEnabled,
       </p>
 
       {/* Suggested first task */}
-      {briefing.suggestedFirstTask && (
+      {briefing.suggestedFirstTask && todayTasks.some((t) => !isTaskDoneForDate(t.task, new Date())) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
