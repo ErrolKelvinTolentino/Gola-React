@@ -29,6 +29,7 @@ export function isTaskActiveOnDate(task, date) {
 
   if (task._graduated) return false;
 
+  // Habit Lifespan Limits
   if (task.endDate && dateKey > task.endDate) {
     return false;
   }
@@ -36,6 +37,7 @@ export function isTaskActiveOnDate(task, date) {
     return false;
   }
 
+  // Handle postponed tasks
   if (Array.isArray(task.postponedDates)) {
     const skipped = task.postponedDates.find((entry) => entry?.from === dateKey);
     if (skipped) return false;
@@ -43,17 +45,26 @@ export function isTaskActiveOnDate(task, date) {
     if (override) return true;
   }
 
+  // Recurring tasks
   if (task.recurrenceType === 'daily') return true;
   if (task.recurrenceType === 'weekly') return Number(task.weeklyDay) === weekDay;
   if (task.recurrenceType === 'specific-days') return task.specificDays.includes(weekDay);
   
-  if (task.oneTimeDate) {
-    return task.oneTimeDate === dateKey;
+  // One-time tasks
+  if (task.recurrenceType === 'one-time') {
+    // If already completed, no longer active
+    if (task.completed) return false;
+    
+    // Only active on the exact scheduled date
+    if (task.oneTimeDate) {
+      return task.oneTimeDate === dateKey;
+    }
+    
+    // No date set — parked/backlog task, not active on any date
+    return false;
   }
-  if (!task.completed) {
-    return true;
-  }
-  return !!(task.updatedAt && task.updatedAt.split('T')[0] === dateKey);
+  
+  return false;
 }
 
 export function isTaskDoneForDate(task, date) {
@@ -80,6 +91,7 @@ export function isTaskDoneForDate(task, date) {
     return task.completed;
   }
 
+  // Recurring tasks
   if (task.completionType === 'quantity') {
     const dailyCount = task.dailyProgress?.[dateKey] || 0;
     const target = task.targetValue || 10;

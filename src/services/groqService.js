@@ -13,8 +13,6 @@ if (process.env.NODE_ENV !== 'production') {
 const GROQ_MODELS = [
   'openai/gpt-oss-120b',
   'openai/gpt-oss-20b',
-  'openai/gpt-oss-safeguard-20b',
-  'qwen/qwen3-32b'
 ];
 const GROQ_ENDPOINT_BASE = 'https://api.groq.com/openai/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 20000;
