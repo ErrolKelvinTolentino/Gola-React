@@ -10,7 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <ErrorBoundary componentName="AppRoot">
       <TimerProvider>
         <NoiseProvider>
           <App />

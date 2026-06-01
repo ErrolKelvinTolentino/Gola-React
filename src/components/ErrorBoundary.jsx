@@ -1,4 +1,5 @@
 import React from 'react';
+import ErrorFallback from './ErrorFallback';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -29,25 +30,17 @@ export default class ErrorBoundary extends React.Component {
             error={this.state.error}
             errorInfo={this.state.errorInfo}
             onRetry={this.handleRetry}
+            componentName={this.props.componentName}
           />
         );
       }
       return (
-        <div style={{
-          padding: '32px',
-          textAlign: 'center',
-          background: 'var(--panel)',
-          borderRadius: '16px',
-          border: '1px solid var(--line)'
-        }}>
-          <h3 style={{ color: '#ef4444' }}>Something went wrong</h3>
-          <p style={{ color: 'var(--muted)', margin: '12px 0' }}>
-            {this.state.error?.message || 'An unexpected error occurred'}
-          </p>
-          <button className="primary-btn" onClick={this.handleRetry}>
-            Try Again
-          </button>
-        </div>
+        <ErrorFallback
+          error={this.state.error}
+          errorInfo={this.state.errorInfo}
+          onRetry={this.handleRetry}
+          componentName={this.props.componentName}
+        />
       );
     }
     return this.props.children;

@@ -887,14 +887,58 @@ function TaskRow({ task, goalId, isActiveToday, isDoneToday, onToggle, onEdit, o
 
           {isGraduated && !task._graduated && updateTask && (
             <div style={{ marginTop: '8px', padding: '10px 14px', background: 'rgba(16, 185, 129, 0.08)', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>🎉 Habit target reached!</span>
+              <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
+                🎉 Habit target reached! ({task.targetCount}/{task.targetCount} times)
+              </span>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
                 <button 
-                  onClick={() => updateTask(goalId, task.id, { _graduated: true })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateTask(goalId, task.id, { _graduated: true, _graduatedAt: new Date().toISOString() });
+                  }}
                   style={{ fontSize: '0.75rem', padding: '4px 10px', background: '#10b981', color: '#fff', borderRadius: '4px', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                 >
                   Archive & Celebrate
                 </button>
+                {task.evolvesToId ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateTask(goalId, task.id, { _graduated: true, _graduatedAt: new Date().toISOString() });
+                    }}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '4px 10px',
+                      background: 'rgba(139, 92, 246, 0.15)',
+                      color: 'var(--accent)',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(139, 92, 246, 0.3)',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    ⚡ Evolve Habit
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateTask(goalId, task.id, { _graduated: true, _graduatedAt: new Date().toISOString() });
+                    }}
+                    style={{
+                      fontSize: '0.75rem',
+                      padding: '4px 10px',
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#f59e0b',
+                      borderRadius: '4px',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    Create Harder Version
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1080,10 +1124,48 @@ function GoalsPage({
     return tasks;
   }, [selectedGoal, taskQuery, taskFilter, sortBy, today, isTaskActiveOnDate, isTaskDoneForDate]);
 
-  const pendingTasks = filteredTasks.filter(t => !isTaskDoneForDate(t, today));
-  const doneTasks = filteredTasks.filter(t => isTaskDoneForDate(t, today));
+  const graduatedTasks = useMemo(() => {
+    if (!selectedGoal) return [];
+    return filteredTasks.filter((task) =>
+      task._graduated ||
+      (task.targetCount && (task.completedDates || []).length >= task.targetCount)
+    );
+  }, [filteredTasks, selectedGoal]);
+
+  const nonGraduatedTasks = useMemo(() => {
+    if (graduatedTasks.length === 0) return filteredTasks;
+    const graduatedIds = new Set(graduatedTasks.map((task) => task.id));
+    return filteredTasks.filter((task) => !graduatedIds.has(task.id));
+  }, [filteredTasks, graduatedTasks]);
+
+  const pendingTasks = nonGraduatedTasks.filter(t => !isTaskDoneForDate(t, today));
+  const doneTasks = nonGraduatedTasks.filter(t => isTaskDoneForDate(t, today));
   const activeCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskActiveOnDate(t, today)).length : 0;
   const doneCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskDoneForDate(t, today)).length : 0;
+
+  const getPhaseCompletionPercent = (phase) => {
+    if (!selectedGoal) return 0;
+    const phaseTasks = selectedGoal.tasks.filter(t => t.phaseId === phase.id);
+    if (phaseTasks.length === 0) return 0;
+
+    let totalWeight = 0;
+    let completedWeight = 0;
+
+    phaseTasks.forEach((task) => {
+      if (task.recurrenceType === 'one-time') {
+        totalWeight += 1;
+        if (task.completed || isTaskDoneForDate(task, today)) completedWeight += 1;
+      } else if (task.targetCount) {
+        totalWeight += task.targetCount;
+        completedWeight += Math.min((task.completedDates || []).length, task.targetCount);
+      } else {
+        totalWeight += 1;
+        if (isTaskDoneForDate(task, today)) completedWeight += 1;
+      }
+    });
+
+    return totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 0;
+  };
 
   /* ═════════════════════════════════════════════════════════════
      RENDER: Goals List (no goal selected)
@@ -1286,7 +1368,7 @@ function GoalsPage({
                 onSubmit={addGoal}
               />
             ) : (
-              <ErrorBoundary>
+              <ErrorBoundary componentName="AiGoalWizard">
                 <AiGoalWizard
                   goalName={goalName} setGoalName={setGoalName}
                   goalVision={goalVision} setGoalVision={setGoalVision}
@@ -1623,6 +1705,7 @@ function GoalsPage({
               )}
             </div>
           ) : selectedGoal.roadmap?.phases?.length > 0 && sortBy === 'default' ? (
+            <>
             <div style={{ display: 'grid', gap: '16px' }}>
               {selectedGoal.roadmap.phases.map((phase, index) => {
                 const phasePending = pendingTasks.filter(t => t.phaseId === phase.id);
@@ -1631,6 +1714,7 @@ function GoalsPage({
 
                 const unlocked = isPhaseUnlocked(phase, selectedGoal);
                 const opacityStyle = unlocked ? 1 : 0.5;
+                const phaseProgress = getPhaseCompletionPercent(phase);
 
                 return (
                   <div key={phase.id} className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: `1px solid ${phase.color || 'var(--line)'}`, opacity: opacityStyle }}>
@@ -1649,7 +1733,17 @@ function GoalsPage({
                           Locked
                         </div>
                       )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: 'auto', opacity: 0.6 }}>
+                      {unlocked && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', minWidth: '140px' }}>
+                          <div style={{ flex: 1, height: '6px', background: 'var(--line)', borderRadius: '999px', overflow: 'hidden' }}>
+                            <div style={{ width: `${phaseProgress}%`, height: '100%', background: phase.color || 'var(--accent)', transition: 'width 0.3s ease' }} />
+                          </div>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: phase.color || 'var(--muted)' }}>
+                            {phaseProgress}%
+                          </span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: unlocked ? '0' : 'auto', opacity: 0.6 }}>
                         {index > 0 && (
                           <button onClick={() => movePhase(selectedGoal.id, index, 'up')} className="ghost-btn" style={{ padding: '0', height: '22px', width: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', fontSize: '0.8rem' }}>
                             ↑
@@ -1769,6 +1863,30 @@ function GoalsPage({
                 );
               })()}
             </div>
+            {graduatedTasks.length > 0 && (
+              <div className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--line)' }}>
+                <div style={{
+                  padding: '10px 18px', fontSize: '0.72rem', fontWeight: 800,
+                  textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)',
+                  borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: '8px'
+                }}>
+                  🎯 Graduated ({graduatedTasks.length})
+                </div>
+                {graduatedTasks.map((task) => (
+                  <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                    isActiveToday={isTaskActiveOnDate(task, today)}
+                    isDoneToday={true}
+                    onToggle={toggleTaskDoneForToday}
+                    onEdit={setEditingTask}
+                    onDelete={deleteTask}
+                    lockReason={getLockReason(task)}
+                    goalTasks={selectedGoal.tasks}
+                    dense={denseMode}
+                    updateTask={updateTask} />
+                ))}
+              </div>
+            )}
+            </>
           ) : (
             <div className="card premium-surface" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--line)' }}>
               {/* Pending section */}
@@ -1809,6 +1927,31 @@ function GoalsPage({
                     <CheckCircle2 size={12} /> Done ({doneTasks.length})
                   </div>
                   {doneTasks.map((task, idx) => (
+                    <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
+                      isActiveToday={isTaskActiveOnDate(task, today)}
+                      isDoneToday={true}
+                      onToggle={toggleTaskDoneForToday}
+                      onEdit={setEditingTask}
+                      onDelete={deleteTask}
+                      lockReason={getLockReason(task)}
+                      goalTasks={selectedGoal.tasks}
+                      dense={denseMode}
+                      updateTask={updateTask} />
+                  ))}
+                </div>
+              )}
+              {graduatedTasks.length > 0 && (
+                <div>
+                  <div style={{
+                    padding: '10px 18px', fontSize: '0.72rem', fontWeight: 800,
+                    textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)',
+                    borderBottom: '1px solid var(--line)',
+                    borderTop: pendingTasks.length > 0 || doneTasks.length > 0 ? '1px solid var(--line)' : 'none',
+                    display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.8
+                  }}>
+                    🎯 Graduated ({graduatedTasks.length})
+                  </div>
+                  {graduatedTasks.map((task) => (
                     <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
                       isActiveToday={isTaskActiveOnDate(task, today)}
                       isDoneToday={true}

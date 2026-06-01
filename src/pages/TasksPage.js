@@ -35,7 +35,6 @@ function RingProgress({ pct = 0, size = 32, stroke = 3, isEmpty = false }) {
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: 'block' }}>
-      {/* track */}
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -44,7 +43,6 @@ function RingProgress({ pct = 0, size = 32, stroke = 3, isEmpty = false }) {
         stroke="var(--line)"
         strokeWidth={stroke}
       />
-      {/* progress arc */}
       {!isEmpty && pct > 0 && (
         <circle
           cx={size / 2}
@@ -86,6 +84,14 @@ function TaskDots({ count = 0, done = 0 }) {
 }
 
 /* ─────────────────────────────────────────────────────────────────── */
+
+function getUserEnergy() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 10) return 'Medium';
+  if (hour >= 10 && hour < 14) return 'High';
+  if (hour >= 14 && hour < 17) return 'Medium';
+  return 'Low';
+}
 
 function parseTimeEstimate(value) {
   if (!value) return 30;
@@ -205,8 +211,6 @@ function QuantityControl({ task, goalId, dateKey, isLocked, updateTask, isOneTim
     </div>
   );
 }
-
-
 
 function ScaleControl({ task, goalId, dateKey, isLocked, updateTask, isOneTime }) {
   const currentVal = isOneTime ? (task.currentValue || 0) : (task.dailyProgress?.[dateKey] || 0);
@@ -374,6 +378,11 @@ function TasksPage({
   const [postponeTarget, setPostponeTarget] = useState(null);
   const [postponeValue, setPostponeValue] = useState('');
   const [expandedTasks, setExpandedTasks] = useState({});
+  const [hasInitialScrolled, setHasInitialScrolled] = useState(false);
+  const [userCapacity, setUserCapacity] = useState(() => {
+    const saved = localStorage.getItem('gola.userCapacity');
+    return saved ? parseInt(saved, 10) : 240;
+  });
 
   // ── Compassionate Triage state & effect ─────────────────────────
   const [triageTasks, setTriageTasks] = useState([]);
@@ -394,7 +403,21 @@ function TasksPage({
       const leftovers = goals.flatMap(goal => {
         return goal.tasks
           .filter(task => safeIsTaskActiveOnDate(task, yesterday) && !isTaskDoneForDate(task, yesterday))
-          .map(task => ({ goalId: goal.id, goalName: goal.name, task }));
+          .map(task => {
+            let phaseOrder = 999;
+            let phaseLabel = null;
+            if (goal.roadmap?.phases) {
+              const phaseIndex = goal.roadmap.phases.findIndex(p =>
+                p.tasks?.some(pt => pt.id === task.id) || task.phaseId === p.id
+              );
+              if (phaseIndex >= 0) {
+                phaseOrder = phaseIndex;
+                phaseLabel = goal.roadmap.phases[phaseIndex].label;
+              }
+            }
+            return { goalId: goal.id, goalName: goal.name, task, phaseOrder, phaseLabel };
+          })
+          .sort((a, b) => a.phaseOrder - b.phaseOrder);
       });
 
       if (leftovers.length > 0) {
@@ -438,12 +461,9 @@ function TasksPage({
     return (date) => (getDateKey(date) === todayKey ? activeTasksToday : []);
   }, [getActiveTasksForDate, goals, safeIsTaskActiveOnDate, todayKey, activeTasksToday]);
 
-  // ── selectedDate must come first so dayItems can depend on it ─────
   const selectedDate = useMemo(() => new Date(`${selectedDateKey}T00:00:00`), [selectedDateKey]);
 
-  // ── Build dynamic window that always includes selectedDate ────────
-  // Compute how far the selected date is from today, then expand bounds.
-  const BUFFER = 3;  // cells to keep on each side of every anchor
+  const BUFFER = 3;
   const MIN_PAST = 3;
   const MIN_FUTURE = 10;
   const dayItems = useMemo(() => {
@@ -467,7 +487,6 @@ function TasksPage({
     return list;
   }, [today, selectedDate, resolveActiveTasksForDate, isTaskDoneForDate]);
 
-  // Today's index within the dynamic window
   const todayIndex = dayItems.findIndex((item) => item.dateKey === todayKey);
 
   const selectedDay =
@@ -503,48 +522,41 @@ function TasksPage({
     day: 'numeric',
   });
 
-  // ── Month label for header (derived from the selected date) ─────
   const monthLabel = selectedDate.toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   });
 
-  // Filter helper
   const filterTaskFn = useCallback((item) => {
-    const { task, goalId } = item;
+    const { task, goalId, goalName } = item;
     
-    // Search filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      const titleMatch = task.title?.toLowerCase().includes(q);
-      const descMatch = task.description?.toLowerCase().includes(q);
-      if (!titleMatch && !descMatch) return false;
-    }
-    
-    // Goal filter
-    if (filterGoal !== 'all' && goalId !== filterGoal) {
+      if (task.title?.toLowerCase().includes(q)) return true;
+      if (task.description?.toLowerCase().includes(q)) return true;
+      if (goalName.toLowerCase().includes(q)) return true;
+      const allSubtasks = [
+        ...(task.subtasks || []),
+        ...Object.values(task.dailySubtasks || {}).flat()
+      ];
+      if (allSubtasks.some(sub => sub.title?.toLowerCase().includes(q))) return true;
+      if (task.energy?.toLowerCase().includes(q)) return true;
+      if (task.recurrenceType?.toLowerCase().includes(q)) return true;
       return false;
     }
     
-    // Energy filter
-    if (filterEnergy !== 'all' && task.energy !== filterEnergy) {
-      return false;
-    }
-
-    // Recurrence filter
-    if (filterRecurrence !== 'all' && task.recurrenceType !== filterRecurrence) {
-      return false;
-    }
+    if (filterGoal !== 'all' && goalId !== filterGoal) return false;
+    if (filterEnergy !== 'all' && task.energy !== filterEnergy) return false;
+    if (filterRecurrence !== 'all' && task.recurrenceType !== filterRecurrence) return false;
     
     return true;
   }, [searchQuery, filterGoal, filterEnergy, filterRecurrence]);
 
-  // Sort helper
   const sortTasksFn = useCallback((a, b) => {
     if (sortBy === 'priority') {
       const aVal = a.task.isPriority ? 1 : 0;
       const bVal = b.task.isPriority ? 1 : 0;
-      return bVal - aVal; // Priority tasks first
+      return bVal - aVal;
     }
     if (sortBy === 'goal') {
       return a.goalName.localeCompare(b.goalName);
@@ -553,7 +565,7 @@ function TasksPage({
       const energyPriority = { High: 3, Medium: 2, Low: 1 };
       const aVal = energyPriority[a.task.energy] || 0;
       const bVal = energyPriority[b.task.energy] || 0;
-      return bVal - aVal; // High energy first
+      return bVal - aVal;
     }
     if (sortBy === 'recurrence') {
       const recurrencePriority = { 'one-time': 1, daily: 2, weekly: 3, specific: 4 };
@@ -561,7 +573,6 @@ function TasksPage({
       const bVal = recurrencePriority[b.task.recurrenceType] || 5;
       return aVal - bVal;
     }
-    // Default sort by _order
     return a._order - b._order;
   }, [sortBy]);
 
@@ -585,6 +596,7 @@ function TasksPage({
         }
         return { ...item, _order: numericOrder };
       })
+      .filter((item) => !item.task._graduated)
       .filter(filterTaskFn)
       .sort(sortTasksFn);
   }, [pendingTasks, filterTaskFn, sortTasksFn]);
@@ -602,17 +614,15 @@ function TasksPage({
       goalId,
       goalName
     }));
-    return getRecommendedTask(taskPool, 'Medium', new Date().getHours());
+    return getRecommendedTask(taskPool, getUserEnergy(), new Date().getHours());
   }, [orderedPendingTasks]);
 
-  const capacityMinutes = 240;
   const usedMinutes = tasksForSelectedDay.reduce(
     (sum, item) => sum + parseTimeEstimate(item.task.timeEstimate),
     0
   );
-  const capacityPercent = Math.min(100, Math.round((usedMinutes / capacityMinutes) * 100));
+  const capacityPercent = Math.min(100, Math.round((usedMinutes / userCapacity) * 100));
 
-  // ── Keyboard / button navigation ────────────────────────────────
   const shiftDate = useCallback(
     (direction) => {
       const next = addDays(selectedDate, direction);
@@ -625,7 +635,6 @@ function TasksPage({
     setSelectedDateKey(todayKey);
   }, [todayKey]);
 
-  // ── Auto-scroll selected cell into view ─────────────────────────
   useEffect(() => {
     const el = cellRefs.current[selectedDateKey];
     if (el && scrollRef.current) {
@@ -634,11 +643,15 @@ function TasksPage({
       const elWidth = el.offsetWidth;
       const containerWidth = container.offsetWidth;
       const targetScroll = elLeft - containerWidth / 2 + elWidth / 2;
-      container.scrollTo({ left: targetScroll, behavior: 'smooth' });
+      if (!hasInitialScrolled) {
+        container.scrollTo({ left: targetScroll, behavior: 'instant' });
+        setHasInitialScrolled(true);
+      } else {
+        container.scrollTo({ left: targetScroll, behavior: 'smooth' });
+      }
     }
-  }, [selectedDateKey]);
+  }, [selectedDateKey, hasInitialScrolled]);
 
-  // ── Toggle handler ───────────────────────────────────────────────
   const handleToggleTaskDone = (goalId, taskId) => {
     if (typeof toggleTaskCompletion === 'function') {
       toggleTaskCompletion(goalId, taskId, selectedDate);
@@ -683,7 +696,6 @@ function TasksPage({
       updatedAt: new Date().toISOString()
     };
 
-    // Task 3.2: Reset daily subtask state for the from-date so new date starts fresh
     if (task.recurrenceType !== 'one-time' && task.dailySubtasks?.[fromKey]) {
       const freshDailySubtasks = { ...(task.dailySubtasks || {}) };
       delete freshDailySubtasks[fromKey];
@@ -812,7 +824,7 @@ function TasksPage({
         </div>
       ) : (
         <>
-          <ErrorBoundary>
+          <ErrorBoundary componentName="MorningBriefing">
             <MorningBriefing
               user={user}
               todayTasks={activeTasksToday || []}
@@ -824,7 +836,6 @@ function TasksPage({
             />
           </ErrorBoundary>
 
-      {/* ── Today Score ──────────────────────────────────────────── */}
       {isToday && todayScore !== undefined && (
         <div style={{ marginBottom: '18px' }}>
           <TodayScore
@@ -867,7 +878,6 @@ function TasksPage({
         className="card premium-surface"
         style={{ padding: '16px', marginBottom: '18px' }}
       >
-        {/* Month title + Jump to Today */}
         <div
           style={{
             display: 'flex',
@@ -934,7 +944,6 @@ function TasksPage({
           </div>
         </div>
 
-        {/* Scrollable day strip */}
         <div
           ref={scrollRef}
           style={{
@@ -991,7 +1000,6 @@ function TasksPage({
                   overflow: 'visible',
                 }}
               >
-                {/* Weekday label */}
                 <span
                   style={{
                     fontSize: '0.68rem',
@@ -1009,7 +1017,6 @@ function TasksPage({
                   {item.date.toLocaleDateString('en-US', { weekday: 'short' })}
                 </span>
 
-                {/* Day number inside a ring */}
                 <div style={{ position: 'relative', width: 32, height: 32 }}>
                   <RingProgress
                     pct={item.completion}
@@ -1040,10 +1047,8 @@ function TasksPage({
                   </span>
                 </div>
 
-                {/* Task dots */}
                 <TaskDots count={item.activeTasks.length} done={item.completed} />
 
-                {/* "TODAY" badge */}
                 {isTodayCell && (
                   <span
                     style={{
@@ -1068,7 +1073,6 @@ function TasksPage({
           })}
         </div>
 
-        {/* Selected day label */}
         <div
           style={{
             marginTop: '12px',
@@ -1182,8 +1186,22 @@ function TasksPage({
       <div className="card premium-surface" style={{ padding: '14px 16px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>Today vs Capacity</div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-            {usedMinutes}/{capacityMinutes} min
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{usedMinutes}/{userCapacity} min</span>
+            <button
+              onClick={() => {
+                const input = prompt('Set your daily capacity (minutes, 30-600):', userCapacity);
+                if (input) {
+                  const val = Math.max(30, Math.min(600, parseInt(input, 10) || 240));
+                  setUserCapacity(val);
+                  localStorage.setItem('gola.userCapacity', val.toString());
+                }
+              }}
+              style={{ padding: '2px 6px', fontSize: '0.65rem', borderRadius: '4px', border: '1px solid var(--line)', background: 'transparent', cursor: 'pointer', color: 'var(--muted)' }}
+              title="Change daily capacity"
+            >
+              ⚙️
+            </button>
           </div>
         </div>
         <div style={{ height: '8px', borderRadius: '999px', background: 'var(--line)', overflow: 'hidden' }}>
@@ -1198,7 +1216,7 @@ function TasksPage({
         </div>
       </div>
 
-      <CapacityWarning tasks={tasksForSelectedDay.map((item) => item.task)} userCapacity={capacityMinutes} />
+      <CapacityWarning tasks={tasksForSelectedDay.map((item) => item.task)} userCapacity={userCapacity} />
 
       {/* ── Task list ──────────────────────────────────────────────── */}
       {tasksForSelectedDay.length === 0 ? (
@@ -1223,10 +1241,8 @@ function TasksPage({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* ── Search & Filter Panel ────────────────────────────────── */}
           <div style={{ marginBottom: '4px' }}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              {/* Search Input */}
               <div style={{
                 position: 'relative',
                 flex: 1,
@@ -1269,7 +1285,6 @@ function TasksPage({
                 )}
               </div>
 
-              {/* Filter Toggle Button */}
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className={`ghost-btn ${showFilters ? 'active' : ''}`}
@@ -1301,7 +1316,6 @@ function TasksPage({
               </button>
             </div>
 
-            {/* Filters Panel Expansion */}
             {showFilters && (
               <div className="card premium-surface" style={{
                 marginTop: '10px',
@@ -1314,7 +1328,6 @@ function TasksPage({
                 <style>{`@keyframes elegantFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                  {/* Goal Filter */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Filter by Goal
@@ -1339,7 +1352,6 @@ function TasksPage({
                     </select>
                   </div>
 
-                  {/* Sort Options */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Sort by
@@ -1366,7 +1378,6 @@ function TasksPage({
                   </div>
                 </div>
 
-                {/* Energy Filter Row */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Energy Requirement
@@ -1395,7 +1406,6 @@ function TasksPage({
                   </div>
                 </div>
 
-                {/* Recurrence Filter Row */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Recurrence Type
@@ -1424,7 +1434,6 @@ function TasksPage({
                   </div>
                 </div>
 
-                {/* Action buttons (Clear Filters) */}
                 {(filterGoal !== 'all' || filterEnergy !== 'all' || filterRecurrence !== 'all' || sortBy !== 'default') && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
                     <button
@@ -1594,17 +1603,28 @@ function TasksPage({
                                         )}
                                       </div>
                                       {postponeTarget === `${goalId}-${task.id}` && (
-                                        <input
-                                          type="date"
-                                          value={postponeValue}
-                                          min={getDateKey(addDays(selectedDate, 1))}
-                                          onChange={(e) => {
-                                            const nextValue = e.target.value;
-                                            setPostponeValue(nextValue);
-                                            if (nextValue) handlePostpone(goalId, task, nextValue);
-                                          }}
-                                          style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '0.75rem' }}
-                                        />
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <input
+                                            type="date"
+                                            value={postponeValue}
+                                            min={getDateKey(addDays(selectedDate, 1))}
+                                            onChange={(e) => setPostponeValue(e.target.value)}
+                                            style={{ padding: '6px 8px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '0.75rem', width: '130px' }}
+                                          />
+                                          <button
+                                            onClick={() => { if (postponeValue) handlePostpone(goalId, task, postponeValue); }}
+                                            disabled={!postponeValue}
+                                            style={{ padding: '4px 8px', fontSize: '0.7rem', fontWeight: 600, borderRadius: '6px', background: postponeValue ? 'var(--accent)' : 'var(--line)', color: postponeValue ? '#fff' : 'var(--muted)', border: 'none', cursor: postponeValue ? 'pointer' : 'not-allowed' }}
+                                          >
+                                            ✓
+                                          </button>
+                                          <button
+                                            onClick={() => setPostponeTarget(null)}
+                                            style={{ padding: '4px 6px', fontSize: '0.7rem', borderRadius: '6px', background: 'transparent', border: '1px solid var(--line)', cursor: 'pointer' }}
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
                                       )}
                                     </div>
                                   </div>
@@ -1629,7 +1649,6 @@ function TasksPage({
                                     )}
                                   </div>
 
-                                  {/* Subtasks and Lifespans Progress */}
                                   <div style={{ paddingLeft: '30px', marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     {task.subtasks && task.subtasks.length > 0 && (
                                       <div>
@@ -1826,7 +1845,6 @@ function TasksPage({
                         </span>
                       </div>
 
-                      {/* Subtasks and Lifespans Progress for Completed Tasks */}
                       <div style={{ paddingLeft: '28px', marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {task.subtasks && task.subtasks.length > 0 && (
                           <div>
@@ -1896,6 +1914,7 @@ function TasksPage({
           )}
         </div>
       )}
+
       {/* Compassionate Triage Modal */}
       {showTriageModal && triageTasks.length > 0 && currentTriageIndex < triageTasks.length && (
         <div className="modal-backdrop" style={{ zIndex: 1100 }}>
@@ -1915,6 +1934,17 @@ function TasksPage({
               <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {triageTasks[currentTriageIndex].goalName}
               </div>
+              {triageTasks[currentTriageIndex].phaseLabel && (
+                <div style={{
+                  fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase',
+                  letterSpacing: '0.05em', color: 'var(--accent)', marginTop: '2px'
+                }}>
+                  Phase {triageTasks[currentTriageIndex].phaseOrder + 1}: {triageTasks[currentTriageIndex].phaseLabel}
+                  {triageTasks[currentTriageIndex].phaseOrder === 0 && (
+                    <span style={{ fontSize: '0.6rem', color: '#ef4444', marginLeft: '6px' }}>⚠ Priority</span>
+                  )}
+                </div>
+              )}
               <h4 style={{ margin: '4px 0 0', fontSize: '1rem', fontWeight: 700 }}>
                 {triageTasks[currentTriageIndex].task.title}
               </h4>

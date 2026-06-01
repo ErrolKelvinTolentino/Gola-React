@@ -1356,7 +1356,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
             <Route
               path="today"
               element={
-                <ErrorBoundary>
+                <ErrorBoundary componentName="TasksPage">
                   <TasksPage
                     user={user}
                     goals={goals}
@@ -1389,7 +1389,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
             <Route
               path="goals"
               element={
-                <ErrorBoundary>
+                <ErrorBoundary componentName="GoalsPage">
                   <GoalsPage
                     goals={goals}
                     selectedGoal={selectedGoal}

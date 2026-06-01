@@ -1,3 +1,5 @@
+import { getGoalProgressWithLifecycle, isPhaseUnlocked, getPhaseUnlockCriteria } from './phaseUtils';
+
 export function addDays(date, amount) {
   const clone = new Date(date);
   clone.setDate(clone.getDate() + amount);
@@ -25,10 +27,8 @@ export function isTaskActiveOnDate(task, date) {
   const dateKey = getDateKey(date);
   const weekDay = new Date(`${dateKey}T00:00:00`).getDay();
 
-  // Task might be graduated
   if (task._graduated) return false;
 
-  // Habit Lifespan Limits
   if (task.endDate && dateKey > task.endDate) {
     return false;
   }
@@ -47,11 +47,9 @@ export function isTaskActiveOnDate(task, date) {
   if (task.recurrenceType === 'weekly') return Number(task.weeklyDay) === weekDay;
   if (task.recurrenceType === 'specific-days') return task.specificDays.includes(weekDay);
   
-  // One-time task scheduling
   if (task.oneTimeDate) {
     return task.oneTimeDate === dateKey;
   }
-  // If unscheduled (Later), active if not completed, or active on the day of completion
   if (!task.completed) {
     return true;
   }
@@ -82,7 +80,6 @@ export function isTaskDoneForDate(task, date) {
     return task.completed;
   }
 
-  // Recurring tasks
   if (task.completionType === 'quantity') {
     const dailyCount = task.dailyProgress?.[dateKey] || 0;
     const target = task.targetValue || 10;
@@ -110,57 +107,22 @@ export function isTaskDoneForDate(task, date) {
 }
 
 export function getGoalProgress(goal) {
-  if (!goal.tasks || goal.tasks.length === 0) return 0;
+  if (!goal?.tasks || goal.tasks.length === 0) return 0;
 
-  const today = new Date();
-  let totalScore = 0;
-
-  for (const task of goal.tasks) {
-    if (task.recurrenceType === 'one-time') {
-      if (task.completionType === 'quantity') {
-        const target = task.targetValue || 10;
-        totalScore += Math.min(1, (task.currentValue || 0) / target);
-      } else if (task.completionType === 'duration') {
-        const target = task.targetValue || 30;
-        totalScore += Math.min(1, (task.currentValue || 0) / target);
-      } else if (task.completionType === 'subtasks') {
-        const subList = task.subtasks || [];
-        if (subList.length > 0) {
-          const completedSub = subList.filter(s => s.completed).length;
-          totalScore += completedSub / subList.length;
-        } else {
-          totalScore += task.completed ? 1 : 0;
-        }
-      } else if (task.completionType === 'scale') {
-        totalScore += (task.currentValue || 0) > 0 ? 1 : 0;
-      } else if (task.completionType === 'multistate') {
-        totalScore += (task.currentValue === 3 || task.completed) ? 1 : 0;
-      } else {
-        totalScore += task.completed ? 1 : 0;
-      }
-    } else {
-      let activeCount = 0;
-      let completedCount = 0;
-      
-      for (let i = 0; i < 14; i++) {
-        const d = addDays(today, -i);
-        if (isTaskActiveOnDate(task, d)) {
-          activeCount++;
-          if (isTaskDoneForDate(task, d)) {
-            completedCount++;
-          }
-        }
-      }
-      
-      if (activeCount > 0) {
-        totalScore += completedCount / activeCount;
-      } else {
-        totalScore += (task.completedDates && task.completedDates.length > 0) ? 1 : 0;
-      }
-    }
+  if (goal.roadmap?.phases?.length > 0) {
+    return getGoalProgressWithLifecycle(goal, new Date());
   }
 
-  return Math.round((totalScore / goal.tasks.length) * 100);
+  return getGoalProgressWithLifecycle(goal, new Date());
+}
+
+export function getGoalProgressDaily(goal) {
+  const totalTasks = goal?.tasks?.length || 0;
+  if (totalTasks === 0) return 0;
+  const completedToday = goal.tasks.filter(
+    (task) => task.completed || (task.completedDates || []).length > 0
+  ).length;
+  return Math.round((completedToday / totalTasks) * 100);
 }
 
 export function getRecurrenceText(task, weekDays) {
@@ -208,7 +170,6 @@ export function buildCalendarCells(goals, date) {
 export function getTaskLockStatus(task, goal, date) {
   if (!task || !goal) return { isLocked: false, reason: null };
 
-  // 1. Task-level predecessor check
   if (task.predecessorId) {
     const predTask = goal.tasks?.find(p => p.id === task.predecessorId);
     if (predTask && !isTaskDoneForDate(predTask, date)) {
@@ -216,12 +177,9 @@ export function getTaskLockStatus(task, goal, date) {
     }
   }
 
-  // 2. Phase sequentiality check
   if (goal.roadmap?.phases && Array.isArray(goal.roadmap.phases)) {
     const currentPhaseIndex = goal.roadmap.phases.findIndex(p => p.id === task.phaseId || p.tasks?.some(pt => pt.id === task.id));
     if (currentPhaseIndex > 0) {
-      // Import dynamically to avoid circular dependency if any
-      const { isPhaseUnlocked, getPhaseUnlockCriteria } = require('./phaseUtils');
       const phase = goal.roadmap.phases[currentPhaseIndex];
       if (!isPhaseUnlocked(phase, goal)) {
         const reason = getPhaseUnlockCriteria(phase, goal) || 'Phase is locked';
