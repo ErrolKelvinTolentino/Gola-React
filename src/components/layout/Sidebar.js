@@ -44,7 +44,7 @@ function Sidebar({ navItems, activePage, onChangePage }) {
             src={golaLogo}
             alt="Gola logo"
             className="brand-logo"
-            style={{ width: '32px', height: '32px', flexShrink: 0 }}
+            style={{ width: '32px', height: '50px', flexShrink: 0 }}
           />
           {!isCollapsed && <strong className="brand-name">GOLA</strong>}
         </div>

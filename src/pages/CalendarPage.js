@@ -32,7 +32,7 @@ function CalendarPage({ goals, weekDays, todayKey, compactCalendar, isTaskDoneFo
   const selectedDateObj = new Date(`${selectedDateStr}T00:00:00`);
   const activeTasksForSelectedDate = goals.flatMap((goal) =>
     goal.tasks
-      .filter((task) => isTaskActiveOnDate(task, selectedDateObj))
+      .filter((task) => isTaskActiveOnDate(task, selectedDateObj, goal))
       .map((task) => ({
         goalId: goal.id,
         goalName: goal.name,

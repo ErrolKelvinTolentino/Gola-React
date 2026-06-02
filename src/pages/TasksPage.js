@@ -402,7 +402,7 @@ function TasksPage({
       
       const leftovers = goals.flatMap(goal => {
         return goal.tasks
-          .filter(task => safeIsTaskActiveOnDate(task, yesterday) && !isTaskDoneForDate(task, yesterday))
+          .filter(task => safeIsTaskActiveOnDate(task, yesterday, goal) && !isTaskDoneForDate(task, yesterday))
           .map(task => {
             let phaseOrder = 999;
             let phaseLabel = null;
@@ -454,7 +454,7 @@ function TasksPage({
       return (date) =>
         goals.flatMap((goal) =>
           goal.tasks
-            .filter((task) => safeIsTaskActiveOnDate(task, date))
+            .filter((task) => safeIsTaskActiveOnDate(task, date, goal))
             .map((task) => ({ goalId: goal.id, goalName: goal.name, task }))
         );
     }
@@ -511,7 +511,7 @@ function TasksPage({
       sum +
       goal.tasks.filter(
         (task) =>
-          safeIsTaskActiveOnDate(task, selectedDate) && !isTaskDoneForDate(task, selectedDate)
+          safeIsTaskActiveOnDate(task, selectedDate, goal) && !isTaskDoneForDate(task, selectedDate)
       ).length,
     0
   );

@@ -1103,7 +1103,7 @@ function GoalsPage({
 
     // Apply status filter
     if (taskFilter === 'today') {
-      tasks = tasks.filter(t => isTaskActiveOnDate(t, today));
+      tasks = tasks.filter(t => isTaskActiveOnDate(t, today, selectedGoal));
     } else if (taskFilter === 'open') {
       tasks = tasks.filter(t => !isTaskDoneForDate(t, today));
     } else if (taskFilter === 'done') {
@@ -1140,7 +1140,7 @@ function GoalsPage({
 
   const pendingTasks = nonGraduatedTasks.filter(t => !isTaskDoneForDate(t, today));
   const doneTasks = nonGraduatedTasks.filter(t => isTaskDoneForDate(t, today));
-  const activeCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskActiveOnDate(t, today)).length : 0;
+  const activeCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskActiveOnDate(t, today, selectedGoal)).length : 0;
   const doneCount = selectedGoal ? selectedGoal.tasks.filter(t => isTaskDoneForDate(t, today)).length : 0;
 
   const getPhaseCompletionPercent = (phase) => {
@@ -1202,7 +1202,7 @@ function GoalsPage({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '14px' }}>
             {goals.map(goal => {
               const progress = getGoalProgress(goal);
-              const goalActive = goal.tasks.filter(t => isTaskActiveOnDate(t, today)).length;
+              const goalActive = goal.tasks.filter(t => isTaskActiveOnDate(t, today, goal)).length;
               const goalDone = goal.tasks.filter(t => isTaskDoneForDate(t, today)).length;
               return (
                 <button key={goal.id} type="button" className="card premium-surface"
@@ -1593,9 +1593,9 @@ function GoalsPage({
                     </span>
                   </div>
 
-                  {replanData.suggestions.length > 0 && (
+                  {replanData.suggestions && Array.isArray(replanData.suggestions) && replanData.suggestions.length > 0 && (
                     <div style={{ display: 'grid', gap: '8px' }}>
-                      {replanData.suggestions.map((s, i) => (
+                      {replanData.suggestions.filter(Boolean).map((s, i) => (
                         <div key={i} style={{ padding: '12px 14px', borderRadius: '10px', background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                             <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '2px 7px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.04em',
@@ -1771,7 +1771,7 @@ function GoalsPage({
                       <div>
                         {phasePending.map(task => (
                           <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                             isDoneToday={false}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
@@ -1797,7 +1797,7 @@ function GoalsPage({
                         </div>
                         {phaseDone.map(task => (
                           <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                             isDoneToday={true}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
@@ -1828,7 +1828,7 @@ function GoalsPage({
                       <div>
                         {noPhasePending.map(task => (
                           <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                             isDoneToday={false}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
@@ -1847,7 +1847,7 @@ function GoalsPage({
                         </div>
                         {noPhaseDone.map(task => (
                           <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                            isActiveToday={isTaskActiveOnDate(task, today)}
+                            isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                             isDoneToday={true}
                             onToggle={toggleTaskDoneForToday}
                             onEdit={setEditingTask}
@@ -1874,7 +1874,7 @@ function GoalsPage({
                 </div>
                 {graduatedTasks.map((task) => (
                   <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                    isActiveToday={isTaskActiveOnDate(task, today)}
+                    isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                     isDoneToday={true}
                     onToggle={toggleTaskDoneForToday}
                     onEdit={setEditingTask}
@@ -1902,7 +1902,7 @@ function GoalsPage({
                   </div>
                   {pendingTasks.map((task, idx) => (
                     <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                      isActiveToday={isTaskActiveOnDate(task, today)}
+                      isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                       isDoneToday={false}
                       onToggle={toggleTaskDoneForToday}
                       onEdit={setEditingTask}
@@ -1928,7 +1928,7 @@ function GoalsPage({
                   </div>
                   {doneTasks.map((task, idx) => (
                     <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                      isActiveToday={isTaskActiveOnDate(task, today)}
+                      isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                       isDoneToday={true}
                       onToggle={toggleTaskDoneForToday}
                       onEdit={setEditingTask}
@@ -1953,7 +1953,7 @@ function GoalsPage({
                   </div>
                   {graduatedTasks.map((task) => (
                     <TaskRow key={task.id} task={task} goalId={selectedGoal.id}
-                      isActiveToday={isTaskActiveOnDate(task, today)}
+                      isActiveToday={isTaskActiveOnDate(task, today, selectedGoal)}
                       isDoneToday={true}
                       onToggle={toggleTaskDoneForToday}
                       onEdit={setEditingTask}

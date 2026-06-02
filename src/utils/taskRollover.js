@@ -7,7 +7,7 @@ export function rolloverIncompleteTasks(goals, fromDate, toDate) {
   let didUpdate = false;
   const nextGoals = goals.map((goal) => {
     const nextTasks = goal.tasks.map((task) => {
-      const isActive = isTaskActiveOnDate(task, fromDate);
+      const isActive = isTaskActiveOnDate(task, fromDate, goal);
       const isDone = isTaskDoneForDate(task, fromDate);
 
       if (!isActive || isDone) return task;

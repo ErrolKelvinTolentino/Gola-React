@@ -20,7 +20,7 @@ function GoalTasksPreview({ goal, weekStart, today, safeIsTaskDoneForDate }) {
   // Filter tasks that are active this week
   const activeTasksThisWeek = goal.tasks.filter(task => {
     for (let i = 0; i < 7; i++) {
-      if (isTaskActiveOnDate(task, addDays(weekStart, i))) return true;
+      if (isTaskActiveOnDate(task, addDays(weekStart, i), goal)) return true;
     }
     return false;
   });
@@ -56,7 +56,7 @@ function GoalTasksPreview({ goal, weekStart, today, safeIsTaskDoneForDate }) {
             let activeCount = 0;
             for (let i = 0; i < 7; i++) {
               const day = addDays(weekStart, i);
-              if (isTaskActiveOnDate(task, day)) {
+              if (isTaskActiveOnDate(task, day, goal)) {
                 activeCount++;
                 if (safeIsTaskDoneForDate(task, day)) {
                   completedCount++;
@@ -91,7 +91,7 @@ function GoalTasksPreview({ goal, weekStart, today, safeIsTaskDoneForDate }) {
   );
 }
 
-function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiEnabled, isTaskDoneForDate }) {
+function ReviewPage({ user, goals, focusSessions, onAdjustGoal, updateGoal, today, aiEnabled, isTaskDoneForDate }) {
   const [aiReview, setAiReview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -118,7 +118,7 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiE
         let dayTasksActive = 0;
 
         for (const task of goal.tasks) {
-          if (isTaskActiveOnDate(task, day)) {
+          if (isTaskActiveOnDate(task, day, goal)) {
             dayTasksActive++;
             if (safeIsTaskDoneForDate(task, day)) {
               dayTasksCompleted++;
@@ -224,7 +224,7 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiE
       for (let i = 0; i < 7; i++) {
         const day = addDays(weekStart, i);
         for (const task of goal.tasks) {
-          if (isTaskActiveOnDate(task, day)) {
+          if (isTaskActiveOnDate(task, day, goal)) {
             totalTaskOccurrences++;
             if (safeIsTaskDoneForDate(task, day)) {
               tasksCompleted++;
@@ -307,7 +307,7 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiE
       let completed = 0;
       for (const goal of goals) {
         for (const task of goal.tasks) {
-          if (isTaskActiveOnDate(task, day)) {
+          if (isTaskActiveOnDate(task, day, goal)) {
             active++;
             if (safeIsTaskDoneForDate(task, day)) {
               completed++;
@@ -447,6 +447,33 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiE
   // ── Fetch AI review ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    const cacheKey = `gola.${user?.uid || 'guest'}.weeklyReviewCache`;
+
+    const getCachedData = () => {
+      try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (
+            parsed.date === new Date().toDateString() &&
+            parsed.weekStatsSignature === weekStatsSignature &&
+            parsed.aiEnabled === aiEnabled
+          ) {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+      return null;
+    };
+
+    const cachedData = getCachedData();
+    if (cachedData) {
+      if (!cancelled) {
+        setAiReview(cachedData.aiReview);
+        setLoading(false);
+      }
+      return;
+    }
 
     const fetchReview = async () => {
       if (!aiEnabled || !isGroqAvailable() || goalsWithTasksCount === 0) {
@@ -460,6 +487,14 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiE
         const result = await generateWeeklyReview(weekStats);
         if (!cancelled) {
           setAiReview(result);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              date: new Date().toDateString(),
+              weekStatsSignature,
+              aiEnabled,
+              aiReview: result
+            }));
+          } catch (_) {}
         }
       } catch (error) {
         console.warn('AI weekly review failed:', error);
@@ -471,14 +506,14 @@ function ReviewPage({ goals, focusSessions, onAdjustGoal, updateGoal, today, aiE
     fetchReview();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiEnabled, goalsWithTasksCount, weekStatsSignature]);
+  }, [aiEnabled, goalsWithTasksCount, weekStatsSignature, user?.uid]);
 
   const weekRangeLabel = `${addDays(today, -6).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 
   // Get AI insight for a specific goal
   const getGoalInsight = (goalId) => {
-    if (!aiReview?.goalInsights) return null;
-    return aiReview.goalInsights.find(gi => gi.goalId === goalId);
+    if (!aiReview?.goalInsights || !Array.isArray(aiReview.goalInsights)) return null;
+    return aiReview.goalInsights.find(gi => gi && gi.goalId === goalId);
   };
 
   return (

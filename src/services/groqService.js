@@ -11,8 +11,7 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('GROQ API Key present:', Boolean(GROQ_API_KEY));
 }
 const GROQ_MODELS = [
-  'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
+  'openai/gpt-oss-120b'
 ];
 const GROQ_ENDPOINT_BASE = 'https://api.groq.com/openai/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 20000;
@@ -59,17 +58,33 @@ function extractJsonPayload(rawText) {
     const objectEnd = cleaned.lastIndexOf('}');
     
     if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+      const jsonCandidate = cleaned.slice(objectStart, objectEnd + 1);
       try {
-        return JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
+        return JSON.parse(jsonCandidate);
       } catch (innerError) {
-        console.error('[extractJsonPayload] Initial parse error:', firstError.message);
-        console.error('[extractJsonPayload] Fallback parse error:', innerError.message);
-        console.error('[extractJsonPayload] Raw text (first 500 chars):', rawText.slice(0, 500));
-        
-        throw new Error(
-          `Groq returned invalid JSON. Parse errors: "${firstError.message}" then "${innerError.message}". ` +
-          `Raw preview: ${rawText.slice(0, 200)}...`
-        );
+        try {
+          const sanitized = jsonCandidate
+            // Remove single-line comments
+            .replace(/(?:^|[^\\:])\/\/.*$/gm, '')
+            // Remove trailing commas before } or ]
+            .replace(/,\s*([\]}])/g, '$1')
+            // Replace literal raw newlines/tabs inside JSON string values.
+            .replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (match, p1) => {
+              return '"' + p1.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t') + '"';
+            });
+
+          return JSON.parse(sanitized);
+        } catch (cleanError) {
+          console.error('[extractJsonPayload] Initial parse error:', firstError.message);
+          console.error('[extractJsonPayload] Fallback parse error:', innerError.message);
+          console.error('[extractJsonPayload] Clean parse error:', cleanError.message);
+          console.error('[extractJsonPayload] Raw text (first 500 chars):', rawText.slice(0, 500));
+          
+          throw new Error(
+            `Groq returned invalid JSON. Parse errors: "${firstError.message}" then "${innerError.message}". ` +
+            `Raw preview: ${rawText.slice(0, 200)}...`
+          );
+        }
       }
     }
     
@@ -261,6 +276,16 @@ export async function callGroq(prompt, systemInstruction) {
 
           return extractJsonPayload(rawText);
         } catch (error) {
+          const isQuotaError = error.message && (
+            error.message.includes('quota exceeded') ||
+            error.message.includes('Quota Exceeded') ||
+            error.message.includes('limit: 0') ||
+            error.message.includes('resource_exhausted')
+          );
+          if (isQuotaError) {
+            lastError = error;
+            break; // Stop retrying on quota exhausted errors
+          }
           if (error.name === 'AbortError') {
             if (attempt < MAX_RETRIES_PER_MODEL) {
               const backoffMs = 500 * Math.pow(2, attempt);
@@ -283,12 +308,21 @@ export async function callGroq(prompt, systemInstruction) {
       }
     }
 
-    throw lastError || new Error('Groq request failed across all configured models.');
+    const finalError = lastError || new Error('Groq request failed across all configured models.');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gola-api-error', { 
+        detail: { 
+          message: finalError.message,
+          status: finalError.status || (finalError.message.includes('quota') ? 429 : 500)
+        } 
+      }));
+    }
+    throw finalError;
   })();
 
   // Store and clean up deduplication entry
   inflightRequests.set(dedupeKey, requestPromise);
-  requestPromise.finally(() => inflightRequests.delete(dedupeKey));
+  requestPromise.finally(() => inflightRequests.delete(dedupeKey)).catch(() => {});
 
   return requestPromise;
 }
@@ -305,18 +339,13 @@ export async function generateClarifyingQuestions(
   previousAnswers = {},
   askedQuestions = []
 ) {
-  const systemInstruction = `You are Gola, an AI goal planning assistant. Your job is to ask DOMAIN-SPECIFIC clarifying questions about a user's goal.
+  const systemInstruction = `You are Gola, an AI goal planning assistant. Ask 1 domain-specific clarifying question with exactly 3 options as a JSON object.
 
 RULES:
-- Ask exactly 1 question that is specific to the goal's domain
-- Each question must have exactly 3 options
-- Questions should build on previous answers and avoid repeating past questions
-- Do NOT ask generic productivity questions like "How much time do you have?" or "What's your biggest bottleneck?"
-- For "Learn guitar" ask about guitar type, music style, practice setup
-- For "Launch a SaaS" ask about tech stack, target market, monetization strategy
-- For "Get fit" ask about fitness level, preferred exercise types, equipment access
+1. Ask exactly 1 question specific to the goal's domain (e.g., guitar style, SaaS monetization, fitness equipment).
+2. Avoid generic productivity questions. Build on previous answers.
 
-Return JSON with this exact schema:
+JSON SCHEMA:
 {
   "questions": [
     { "text": "question text", "options": ["option1", "option2", "option3"] }
@@ -362,111 +391,35 @@ export async function generateRoadmap(goalName, goalVision, deadline, notes, res
     .map(([idx, answer]) => `Q${parseInt(idx) + 1}: ${answer}`)
     .join('\n');
 
-  const systemInstruction = `You are Gola, an AI goal planning assistant. Generate a detailed, actionable roadmap for the user's goal.
+  const systemInstruction = `You are Gola, an AI goal planning assistant. Generate a detailed, actionable roadmap for the user's goal as a JSON object.
 
-CRITICAL RULES — YOU MUST FOLLOW ALL OF THEM:
+CRITICAL RULES:
+1. CREATE EXACTLY 5-6 PHASES building on each other. First two phases must be setup/milestones. Middle phases a mix. Final phase assessment.
+2. MIX RECURRENCE TYPES: "one-time" (setup/milestones), "daily" (MAX 2 TOTAL across roadmap), "weekly" (reviews, check-ins).
+3. SPREAD WEEKLY TASKS across different "weeklyDay" values (0=Sun, 1=Mon... 6=Sat) to avoid putting >2 on the same day.
+4. TASK COMPLETION TYPES:
+   - "binary" (default checkbox).
+   - "quantity" (count-based; set positive integer "targetValue").
+   - "subtasks" (nested steps; define "subtasks" array of strings).
+   - "scale" (qualitative 1-10 rating).
+   - "multistate" (Todo->Progress->Blocked->Done).
+5. TASKS must be concrete/domain-specific. LIMIT each phase to MAXIMUM 3 tasks. Keep task descriptions extremely short and concise (under 20 words max). Limit 'subtasks' checklist items to maximum 3 strings.
+6. FIELDS: "energy" (Low|Medium|High), "timeEstimate" (15m|30m|1h|2h+), "targetCount" (graduation completions count), "endDate"/"deadline" (YYYY-MM-DD or ""), "isPriority" (boolean), "predecessorTitle"/"evolvedFrom"/"evolvesTo" (exact title of matching task or empty string).
 
-1. CREATE EXACTLY 5-6 PHASES. Each phase represents a stage of progression. Phases should build on each other.
-
-2. MIX RECURRENCE TYPES within and across phases:
-   - "one-time" = milestones, setup tasks, assessments, research sprints
-   - "daily" = core practice habits (MAXIMUM 2 TOTAL)
-   - "weekly" = review sessions, planning, check-ins, practice sessions
-
-3. MAXIMUM 2 DAILY TASKS TOTAL across the entire roadmap.
-
-4. FOR WEEKLY TASKS, SPREAD THEM ACROSS DIFFERENT DAYS:
-   - Set "weeklyDay" to distribute tasks across the week
-   - 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
-   - NEVER put more than 2 weekly tasks on the same day
-   - Spread them out: some on Monday, some on Wednesday, some on Friday
-   - If you have 5 weekly tasks, put 1-2 on Monday, 1 on Wednesday, 1 on Thursday, 1 on Friday
-   - This prevents overwhelming the user
-
-5. SELECT APPROPRIATE TASK COMPLETION TYPES:
-   - Evaluate each task to determine the most interactive measurement pattern:
-     - "binary" = Standard checkbox task (e.g. read an article, install a tool).
-     - "quantity" = Count-based task (e.g. do 15 reps, write 500 words).
-     - "subtasks" = Milestone task broken into dynamic steps (e.g. set up server, write API endpoints, configure database).
-     - "scale" = Qualitative tracking rating (e.g. rate sleep quality, track energy level).
-     - "multistate" = Status cycling badge (Todo -> Progress -> Blocked -> Done).
-   - If task is "quantity", specify a positive integer "targetValue" (e.g. 15 for 15 reps).
-   - If task is "subtasks", specify "subtasks" as an array of string items representing the nested checklists.
-
-6. TASKS MUST BE DOMAIN-SPECIFIC AND CONCRETE:
-   - GOOD: "Memorize 50 most common Spanish verbs with flashcards"
-   - BAD: "Practice Spanish" or "Learn vocabulary"
-
-7. EACH TASK MUST INCLUDE A DETAILED DESCRIPTION:
-   - Use the task 'description' field to explain the next steps, provide a mini-tutorial, or suggest learning resources.
-   - Avoid generic wording like "Research X" without concrete guidance.
-
-8. THE FIRST TWO PHASES must contain one-time setup/milestone tasks.
-   The middle phases should have a mix.
-   The final phase should have assessment/delivery tasks.
-
-9. ENERGY LEVELS:
-   - "High" = Learning new concepts, intense practice, assessments
-   - "Medium" = Regular practice, review
-   - "Low" = Maintenance, light review, planning
-
-10. TIME ESTIMATES:
-   - "15m" = Quick tasks, review, light practice
-   - "30m" = Standard practice sessions
-   - "1h" = Deep learning, comprehensive review
-   - "2h+" = Intensive sessions, major milestones
-
-11. LIFECYCLE FIELDS:
-   - "targetCount": For daily/weekly tasks, how many completions signify "graduation" (e.g., 30 for a 30-day habit).
-   - "endDate": YYYY-MM-DD when this task naturally expires.
-   - "isPriority": true if this is a high-leverage key task.
-   - "predecessorTitle": If this task depends on another task being completed first, put that task's title here.
-   - "evolvedFrom": If this habit is a harder version of an earlier phase habit, put the old title here.
-   - "evolvesTo": If this habit will become something harder in a later phase, put the future title here.
-
-EXAMPLE OF A WELL-DISTRIBUTED WEEK:
-- Weekly task 1: weeklyDay=1 (Monday)
-- Weekly task 2: weeklyDay=3 (Wednesday)
-- Weekly task 3: weeklyDay=5 (Friday)
-- NOT all on weeklyDay=1
-
-Return JSON with this exact schema:
+JSON SCHEMA:
 {
-  "summary": {
-    "headline": "string",
-    "description": "string",
-    "keyResults": ["string", "string", "string", "string"],
-    "moodColor": "#hex"
-  },
-  "phases": [
-    {
-      "label": "string",
-      "theme": "string",
-      "description": "string",
-      "color": "#hex",
-      "tasks": [
-        {
-          "title": "string",
-          "description": "string",
-          "recurrenceType": "one-time|daily|weekly",
-          "timeEstimate": "15m|30m|1h|2h+",
-          "energy": "Low|Medium|High",
-          "deadline": "YYYY-MM-DD or empty string",
-          "oneTimeDate": "YYYY-MM-DD or empty string",
-          "weeklyDay": 0,
-          "completionType": "binary|quantity|subtasks|scale|multistate",
-          "targetValue": number,
-          "subtasks": ["string", "string"],
-          "targetCount": number,
-          "endDate": "YYYY-MM-DD or empty string",
-          "isPriority": boolean,
-          "predecessorTitle": "string or empty",
-          "evolvedFrom": "string or empty",
-          "evolvesTo": "string or empty"
-        }
-      ]
-    }
-  ]
+  "summary": { "headline": "string", "description": "string", "keyResults": ["string"], "moodColor": "#hex" },
+  "phases": [{
+    "label": "string", "theme": "string", "description": "string", "color": "#hex",
+    "tasks": [{
+      "title": "string", "description": "string", "recurrenceType": "one-time|daily|weekly",
+      "timeEstimate": "15m|30m|1h|2h+", "energy": "Low|Medium|High",
+      "deadline": "YYYY-MM-DD|", "oneTimeDate": "YYYY-MM-DD|", "weeklyDay": 0-6,
+      "completionType": "binary|quantity|subtasks|scale|multistate", "targetValue": null|number,
+      "subtasks": ["string"], "targetCount": null|number, "endDate": "YYYY-MM-DD|",
+      "isPriority": boolean, "predecessorTitle": "string", "evolvedFrom": "string", "evolvesTo": "string"
+    }]
+  }]
 }`;
 
   const prompt = `Goal: "${goalName}"
@@ -534,23 +487,19 @@ export async function generateMorningBriefing(todayTasks, goals, completionRate,
     `- "${g.name}" (${g.tasks.length} tasks)`
   ).join('\n');
 
-  const systemInstruction = `You are Gola, a warm and motivating AI productivity coach. Generate a personalized daily briefing.
+  const systemInstruction = `You are Gola, a motivating AI productivity coach. Generate a daily briefing as a JSON object.
 
 RULES:
-- Write a 3-5 sentence briefing that feels personal, encouraging, and highly contextual.
-- Acknowledge today's task load realistically based on task statuses.
-- If the user has a streak going, celebrate it subtly.
-- If there are pending tasks, suggest which task to tackle first based on energy levels.
-- If ALL tasks are already COMPLETED (or if completion rate is 100%), congratulate the user warmly on completing everything scheduled for today, celebrate their productivity, and encourage them to rest, review their goals, or plan for tomorrow. In this case, "suggestedFirstTask" MUST be null and the mood should be "celebratory".
-- Set an appropriate mood: "motivated" for busy days, "focused" for moderate days, "gentle" for light days, "celebratory" for high streaks or high completion (100% completion rate).
-- Keep the greeting contextual (time of day, workload, or completion state).
-- Today's date is provided. Do not guess or assume the date.
+1. Write greeting (contextual to time/completion) and a 3-5 sentence briefing (realistic, encouraging, celebrating streaks).
+2. If tasks remain, suggest the first task to tackle based on energy levels.
+3. If all tasks are completed (100% completion), set suggestedFirstTask to null, and mood to "celebratory".
+4. Set mood: "motivated" (busy), "focused" (moderate), "gentle" (light), "celebratory" (high completion/streaks).
 
-Return JSON with this exact schema:
+JSON SCHEMA:
 {
-  "greeting": "Good morning / Great job today!",
-  "briefing": "3-5 sentence briefing text",
-  "suggestedFirstTask": "task title or null",
+  "greeting": "string",
+  "briefing": "string",
+  "suggestedFirstTask": "string|null",
   "mood": "motivated|focused|gentle|celebratory"
 }`;
 
@@ -586,37 +535,19 @@ export async function generateWeeklyReview(goalsWithStats) {
     `- "${g.name}": ${g.tasksCompleted}/${g.totalTasks} tasks completed this week, ${g.focusMinutes || 0} focus minutes`
   ).join('\n');
 
-  const systemInstruction = `You are Gola, an AI productivity coach conducting a weekly review. Analyze the user's weekly performance and provide actionable insights.
+  const systemInstruction = `You are Gola, an AI productivity coach. Analyze the user's weekly performance and return a JSON object.
 
 RULES:
-- Provide an overall assessment paragraph (2-3 sentences)
-- For each goal, assign a status: "on_track", "at_risk", or "behind"
-  - on_track: ≥70% tasks completed
-  - at_risk: 40-69% completed
-  - behind: <40% completed
-- Write a specific insight paragraph for each goal (what went well, what needs attention)
-- Suggest one concrete adjustment per goal that is at_risk or behind
-- Adjustment types: "extend_timeline", "reduce_scope", "keep_current"
+1. Provide overallAssessment paragraph (2-3 sentences).
+2. For each goal, determine status: "on_track" (≥70% completed), "at_risk" (40-69%), "behind" (<40%).
+3. Write goal-specific insight (what went well/needs attention) and suggestion.
+4. For goals at_risk/behind, recommend an adjustment type: "extend_timeline", "reduce_scope", or "keep_current" with a short message.
 
-Return JSON with this exact schema:
+JSON SCHEMA:
 {
   "overallAssessment": "string",
-  "goalInsights": [
-    {
-      "goalId": number,
-      "goalName": "string",
-      "status": "on_track|at_risk|behind",
-      "insight": "string",
-      "suggestion": "string"
-    }
-  ],
-  "recommendedAdjustments": [
-    {
-      "goalId": number,
-      "type": "extend_timeline|reduce_scope|keep_current",
-      "message": "string"
-    }
-  ]
+  "goalInsights": [{ "goalId": number, "goalName": "string", "status": "on_track|at_risk|behind", "insight": "string", "suggestion": "string" }],
+  "recommendedAdjustments": [{ "goalId": number, "type": "extend_timeline|reduce_scope|keep_current", "message": "string" }]
 }`;
 
   const prompt = `Weekly performance:
@@ -650,6 +581,9 @@ Generate a weekly review with insights and adjustment suggestions.`;
  * Adds unique IDs, validates fields, ensures compatibility with buildRoadmap output.
  */
 export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
+  if (!aiResponse) {
+    throw new Error('AI response is empty or invalid');
+  }
   let idSeed = Date.now();
   const uid = () => ++idSeed;
 
@@ -658,59 +592,63 @@ export function mapAiRoadmapToAppSchema(aiResponse, deadline) {
   const validEnergies = ['Low', 'Medium', 'High'];
   const validCompletionTypes = ['binary', 'quantity', 'subtasks', 'scale', 'multistate'];
 
-  const phases = (aiResponse.phases || []).map((phase, phaseIdx) => {
-    const phaseId = `p${phaseIdx + 1}`;
-    const tasks = (phase.tasks || []).map((task, taskIdx) => {
-      const cType = validCompletionTypes.includes(task.completionType) ? task.completionType : 'binary';
-      const subtaskArray = cType === 'subtasks' && Array.isArray(task.subtasks)
-        ? task.subtasks.map((st, stIdx) => ({
-            id: `sub-${uid()}-${stIdx}`,
-            title: typeof st === 'string' ? st.trim() : (st?.title || 'Subtask').trim(),
-            completed: false
-          }))
-        : [];
+  const phases = (aiResponse.phases || [])
+    .filter(Boolean)
+    .map((phase, phaseIdx) => {
+      const phaseId = `p${phaseIdx + 1}`;
+      const tasks = (phase.tasks || [])
+        .filter(Boolean)
+        .map((task, taskIdx) => {
+          const cType = validCompletionTypes.includes(task.completionType) ? task.completionType : 'binary';
+          const subtaskArray = cType === 'subtasks' && Array.isArray(task.subtasks)
+            ? task.subtasks.filter(Boolean).map((st, stIdx) => ({
+                id: `sub-${uid()}-${stIdx}`,
+                title: typeof st === 'string' ? st.trim() : (st?.title || 'Subtask').trim(),
+                completed: false
+              }))
+            : [];
+
+          return {
+            id: uid(),
+            title: task.title || 'Untitled task',
+            description: safeString(task.description, ''),
+            recurrenceType: validRecurrenceTypes.includes(task.recurrenceType) ? task.recurrenceType : 'one-time',
+            oneTimeDate: task.oneTimeDate || deadline || '',
+            deadline: task.deadline || deadline || '',
+            weeklyDay: typeof task.weeklyDay === 'number' ? task.weeklyDay : 1,
+            specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
+            timeEstimate: validTimeEstimates.includes(task.timeEstimate) ? task.timeEstimate : '30m',
+            energy: validEnergies.includes(task.energy) ? task.energy : 'Medium',
+            completionType: cType,
+            targetValue: cType === 'quantity' 
+              ? (Number(task.targetValue) || 10)
+              : null,
+            currentValue: 0,
+            subtasks: subtaskArray,
+            dailyProgress: {},
+            progressMinutes: 0,
+            order: taskIdx,
+            phaseId,
+            targetCount: typeof task.targetCount === 'number' ? task.targetCount : null,
+            endDate: task.endDate || null,
+            isPriority: !!task.isPriority,
+            predecessorTitle: task.predecessorTitle || null,
+            evolvedFrom: task.evolvedFrom || null,
+            evolvesTo: task.evolvesTo || null,
+            completed: false,
+            completedDates: []
+          };
+        });
 
       return {
-        id: uid(),
-        title: task.title || 'Untitled task',
-        description: safeString(task.description, ''),
-        recurrenceType: validRecurrenceTypes.includes(task.recurrenceType) ? task.recurrenceType : 'one-time',
-        oneTimeDate: task.oneTimeDate || deadline || '',
-        deadline: task.deadline || deadline || '',
-        weeklyDay: typeof task.weeklyDay === 'number' ? task.weeklyDay : 1,
-        specificDays: Array.isArray(task.specificDays) ? task.specificDays : [],
-        timeEstimate: validTimeEstimates.includes(task.timeEstimate) ? task.timeEstimate : '30m',
-        energy: validEnergies.includes(task.energy) ? task.energy : 'Medium',
-        completionType: cType,
-        targetValue: cType === 'quantity' 
-          ? (Number(task.targetValue) || 10)
-          : null,
-        currentValue: 0,
-        subtasks: subtaskArray,
-        dailyProgress: {},
-        progressMinutes: 0,
-        order: taskIdx,
-        phaseId,
-        targetCount: typeof task.targetCount === 'number' ? task.targetCount : null,
-        endDate: task.endDate || null,
-        isPriority: !!task.isPriority,
-        predecessorTitle: task.predecessorTitle || null,
-        evolvedFrom: task.evolvedFrom || null,
-        evolvesTo: task.evolvesTo || null,
-        completed: false,
-        completedDates: []
+        id: phaseId,
+        label: phase.label || `Phase ${phaseIdx + 1}`,
+        theme: phase.theme || 'Execution',
+        color: phase.color || '#8b5cf6',
+        description: phase.description || '',
+        tasks
       };
     });
-
-    return {
-      id: phaseId,
-      label: phase.label || `Phase ${phaseIdx + 1}`,
-      theme: phase.theme || 'Execution',
-      color: phase.color || '#8b5cf6',
-      description: phase.description || '',
-      tasks
-    };
-  });
 
   const allTasks = phases.flatMap(p => p.tasks);
 
@@ -771,29 +709,24 @@ export async function generateAdaptiveReplan(goal, progressSummary) {
     return `- "${t.title}" [${t.recurrenceType}] [${status}] energy=${t.energy || 'Medium'} time=${t.timeEstimate || '30m'}`;
   }).join('\n');
 
-  const systemInstruction = `You are Gola, an AI productivity coach specializing in goal replanning. Analyze a user's goal progress and suggest concrete, actionable adjustments.
+  const systemInstruction = `You are Gola, an AI goal replanning coach. Analyze progress and return actionable adjustments as a JSON object.
 
 RULES:
-- Be encouraging but honest about gaps and opportunities.
-- Suggest no more than 3-5 adjustments total.
-- Focus on the most impactful changes first.
-- Each suggestion must have a clear rationale tied to the actual data.
-- Adjustment types: "reschedule" (change timing), "reduce_scope" (simplify a task), "add_checkpoint" (add a milestone), "graduate_habit" (mark habit as complete), "reorder" (change phase ordering).
+1. Suggest 3-5 adjustments (types: reschedule, reduce_scope, add_checkpoint, graduate_habit, reorder).
+2. Provide a 2-3 sentence summary assessment and specify overall health and completion adjustment.
 
-Return JSON with this exact schema:
+JSON SCHEMA:
 {
-  "summary": "2-3 sentence overall assessment",
-  "suggestions": [
-    {
-      "type": "reschedule|reduce_scope|add_checkpoint|graduate_habit|reorder",
-      "taskTitle": "exact task title or null",
-      "phaseLabel": "phase label or null",
-      "rationale": "why this change is recommended",
-      "action": "specific, actionable instruction for the user"
-    }
-  ],
+  "summary": "string",
+  "suggestions": [{
+    "type": "reschedule|reduce_scope|add_checkpoint|graduate_habit|reorder",
+    "taskTitle": "string|null",
+    "phaseLabel": "string|null",
+    "rationale": "string",
+    "action": "string"
+  }],
   "overallHealth": "on_track|at_risk|behind",
-  "estimatedCompletionAdjustment": "e.g. +2 weeks, no change, -1 week"
+  "estimatedCompletionAdjustment": "string"
 }`;
 
   const prompt = `Goal: "${goal.name}"

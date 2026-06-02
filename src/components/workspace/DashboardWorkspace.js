@@ -10,6 +10,7 @@ import GlobalTimerWidget from '../GlobalTimerWidget';
 import MobileBottomNav from '../MobileBottomNav';
 import ConfirmDialog from '../ConfirmDialog';
 import UndoToast from '../UndoToast';
+import RateLimitToast from '../RateLimitToast';
 import EndOfDayModal from '../EndOfDayModal';
 import GoalAutopsy from '../GoalAutopsy';
 import PhaseCompleteModal from '../PhaseCompleteModal';
@@ -18,6 +19,7 @@ import { useTimer } from '../../context/TimerContext';
 import { AppShell, AuroraLayer, MainPanel, FocusWrap } from '../../styles/AppLayout';
 import { DEFAULT_SETTINGS, NAV_ITEMS, WEEK_DAYS } from '../../data/appData';
 import {
+  addDays,
   getDateKey,
   getRecurrenceText,
   isTaskActiveOnDate,
@@ -134,6 +136,9 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   // ── Undo system ─────────────────────────────────────────────────
   const [undoAction, setUndoAction] = useState(null);
 
+  // ── API Error system ─────────────────────────────────────────────
+  const [apiError, setApiError] = useState(null);
+
   // ── Confirm dialog ──────────────────────────────────────────────
   const [confirmDialog, setConfirmDialog] = useState(null);
 
@@ -164,6 +169,37 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     dailyScores,
     dailyReflections
   };
+
+  // ── API Error Listener ───────────────────────────────────────────
+  useEffect(() => {
+    const handleApiError = (event) => {
+      const errorDetail = event.detail || {};
+      const rawMessage = errorDetail.message || 'AI request failed';
+      
+      // Customize message if rate limited or quota exceeded
+      let friendlyMessage = rawMessage;
+      if (rawMessage.includes('quota exceeded') || rawMessage.includes('Limit') || rawMessage.includes('quota') || rawMessage.includes('Resource Exhausted')) {
+        friendlyMessage = 'Groq API quota reached. Offline planner activated.';
+      } else if (rawMessage.includes('Rate limit reached') || rawMessage.includes('rate-limited')) {
+        // Try to parse wait time
+        const match = rawMessage.match(/try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i);
+        if (match) {
+          const m = match[2] ? `${match[2]}m ` : '';
+          const s = match[3] ? `${Math.round(parseFloat(match[3]))}s` : '';
+          friendlyMessage = `Groq rate limit reached. Retry in ${m}${s}. Offline planner active.`;
+        } else {
+          friendlyMessage = 'Groq rate limit reached. Offline planner activated.';
+        }
+      }
+      
+      setApiError(friendlyMessage);
+    };
+
+    window.addEventListener('gola-api-error', handleApiError);
+    return () => {
+      window.removeEventListener('gola-api-error', handleApiError);
+    };
+  }, []);
 
   // ── Hydrate dashboard state from Firestore ───────────────────────
   useEffect(() => {
@@ -402,14 +438,36 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     const lastRollover = localStorage.getItem(rolloverKey);
 
     if (lastRollover !== todayKeyLocal) {
-      const yesterday = getYesterday(new Date());
-      const rollover = rolloverIncompleteTasks(goals, yesterday, new Date());
-      if (rollover.didUpdate) {
-        setGoals(rollover.goals);
-        persistGoals(rollover.goals);
+      if (lastRollover) {
+        let currentParsed = new Date(`${lastRollover}T00:00:00`);
+        const todayParsed = new Date(`${todayKeyLocal}T00:00:00`);
+        let currentGoalsState = goals;
+        let didUpdateAny = false;
+
+        while (getDateKey(currentParsed) < getDateKey(todayParsed)) {
+          const nextDay = addDays(currentParsed, 1);
+          const rollover = rolloverIncompleteTasks(currentGoalsState, currentParsed, nextDay);
+          if (rollover.didUpdate) {
+            currentGoalsState = rollover.goals;
+            didUpdateAny = true;
+          }
+          currentParsed = nextDay;
+        }
+
+        if (didUpdateAny) {
+          setGoals(currentGoalsState);
+          persistGoals(currentGoalsState);
+        }
+        runDailyPruneIfNeeded(currentGoalsState, setGoals, persistGoals);
+      } else {
+        const yesterday = getYesterday(new Date());
+        const rollover = rolloverIncompleteTasks(goals, yesterday, new Date());
+        if (rollover.didUpdate) {
+          setGoals(rollover.goals);
+          persistGoals(rollover.goals);
+        }
+        runDailyPruneIfNeeded(rollover.didUpdate ? rollover.goals : goals, setGoals, persistGoals);
       }
-      // Prune stale dailyProgress / dailySubtasks entries
-      runDailyPruneIfNeeded(rollover.didUpdate ? rollover.goals : goals, setGoals, persistGoals);
       localStorage.setItem(rolloverKey, todayKeyLocal);
     }
 
@@ -438,7 +496,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
   const activeTasksToday = goals.flatMap((goal) =>
     goal.tasks
       .filter((task) => {
-        if (!isTaskActiveOnDate(task, today)) return false;
+        if (!isTaskActiveOnDate(task, today, goal)) return false;
         const lockStatus = getTaskLockStatus(task, goal, today);
         return !lockStatus.isLocked;
       })
@@ -454,7 +512,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
       goals.flatMap((goal) =>
         goal.tasks
           .filter((task) => {
-            if (!isTaskActiveOnDate(task, date)) return false;
+            if (!isTaskActiveOnDate(task, date, goal)) return false;
             const lockStatus = getTaskLockStatus(task, goal, date);
             return !lockStatus.isLocked;
           })
@@ -764,11 +822,11 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
     const yesterdayStr = getDateKey(yesterday);
 
     const completedToday = goals.flatMap(g =>
-      g.tasks.filter(t => isTaskActiveOnDate(t, today) && isTaskDoneForDate(t, today))
+      g.tasks.filter(t => isTaskActiveOnDate(t, today, g) && isTaskDoneForDate(t, today))
     ).length;
 
     const completedYesterday = goals.flatMap(g =>
-      g.tasks.filter(t => isTaskActiveOnDate(t, yesterday) && isTaskDoneForDate(t, yesterday))
+      g.tasks.filter(t => isTaskActiveOnDate(t, yesterday, g) && isTaskDoneForDate(t, yesterday))
     ).length;
 
     if (completedToday > 0) {
@@ -1459,6 +1517,7 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
               path="review"
               element={
                 <ReviewPage
+                  user={user}
                   goals={goals}
                   focusSessions={focusSessions}
                   onAdjustGoal={adjustGoal}
@@ -1522,6 +1581,14 @@ function DashboardWorkspace({ user, onLogout, theme, setTheme }) {
           message={undoAction.message}
           onUndo={() => { undoAction.undo(); setUndoAction(null); }}
           onDismiss={() => setUndoAction(null)}
+        />
+      )}
+
+      {/* API Rate Limit / Quota Toast */}
+      {apiError && (
+        <RateLimitToast
+          message={apiError}
+          onDismiss={() => setApiError(null)}
         />
       )}
 

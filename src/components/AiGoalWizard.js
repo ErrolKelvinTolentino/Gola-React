@@ -6,10 +6,10 @@ import { generateClarifyingQuestions, generateRoadmap, mapAiRoadmapToAppSchema, 
    Roadmap generation engine
    Builds a phased plan from the wizard responses + goal params
  ───────────────────────────────────────────────────────────── */
-function buildRoadmap(goalName, goalVision, deadline, notes, responses) {
-  const pacing = responses[2] || '';
-  const bottleneck = responses[1] || '';
-  const timeline = responses[0] || '';
+function buildRoadmap(goalName, goalVision, deadline, notes, responses = {}) {
+  const pacing = responses?.[2] || '';
+  const bottleneck = responses?.[1] || '';
+  const timeline = responses?.[0] || '';
 
   const isHabits = pacing.includes('habits');
   const isBursts = pacing.includes('bursts');

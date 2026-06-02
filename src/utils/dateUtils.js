@@ -22,7 +22,7 @@ export function prettyDate(dateKey) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-export function isTaskActiveOnDate(task, date) {
+export function isTaskActiveOnDate(task, date, goal = null) {
   if (!task) return false;
   const dateKey = getDateKey(date);
   const weekDay = new Date(`${dateKey}T00:00:00`).getDay();
@@ -48,16 +48,24 @@ export function isTaskActiveOnDate(task, date) {
   // Recurring tasks
   if (task.recurrenceType === 'daily') return true;
   if (task.recurrenceType === 'weekly') return Number(task.weeklyDay) === weekDay;
-  if (task.recurrenceType === 'specific-days') return task.specificDays.includes(weekDay);
+  if (task.recurrenceType === 'specific-days') {
+    return Array.isArray(task.specificDays) && task.specificDays.map(Number).includes(weekDay);
+  }
   
   // One-time tasks
   if (task.recurrenceType === 'one-time') {
     // If already completed, no longer active
     if (task.completed) return false;
     
-    // Only active on the exact scheduled date
+    // If we have the goal context, active status depends on whether the task is currently unlocked.
+    if (goal) {
+      const lockStatus = getTaskLockStatus(task, goal, date);
+      return !lockStatus.isLocked;
+    }
+    
+    // Only active on the exact scheduled date or if overdue (incomplete in the past)
     if (task.oneTimeDate) {
-      return task.oneTimeDate === dateKey;
+      return task.oneTimeDate <= dateKey;
     }
     
     // No date set — parked/backlog task, not active on any date
@@ -164,7 +172,7 @@ export function buildCalendarCells(goals, date) {
 
     for (const goal of goals) {
       for (const task of goal.tasks) {
-        if (isTaskActiveOnDate(task, currentDate)) {
+        if (isTaskActiveOnDate(task, currentDate, goal)) {
           count++;
           if (isTaskDoneForDate(task, currentDate)) {
             completedCount++;
